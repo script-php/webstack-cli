@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Get version
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+    - name: Build binaries
+      run: |
+        # Linux AMD64
+        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o webstack-linux-amd64 .
+        
+        # Linux ARM64
+        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o webstack-linux-arm64 .
+        
+        # Linux ARM
+        GOOS=linux GOARCH=arm go build -ldflags="-s -w" -o webstack-linux-arm .
+        
+        # macOS AMD64
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o webstack-darwin-amd64 .
+        
+        # macOS ARM64
+        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o webstack-darwin-arm64 .
+        
+        # Windows AMD64
+        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o webstack-windows-amd64.exe .
+        
+    - name: Generate checksums
+      run: |
+        sha256sum webstack-* > checksums.txt
+        
+    - name: Create templates archive
+      run: |
+        tar -czf webstack-templates.tar.gz templates/
+        
+    - name: Create release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          webstack-linux-amd64
+          webstack-linux-arm64
+          webstack-linux-arm
+          webstack-darwin-amd64
+          webstack-darwin-arm64
+          webstack-windows-amd64.exe
+          webstack-templates.tar.gz
+          checksums.txt
+          install.sh
+        body: |
+          ## Installation
+          
+          ### Quick Install (Linux/macOS)
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sudo bash
+          ```
+          
+          ### Manual Install
+          1. Download the appropriate binary for your platform
+          2. Make it executable: `chmod +x webstack-*`
+          3. Move to PATH: `sudo mv webstack-* /usr/local/bin/webstack`
+          
+          ### Usage
+          ```bash
+          sudo webstack install all
+          sudo webstack domain add example.com
+          sudo webstack ssl enable example.com
+          ```
+          
+          ## What's Changed
+          - Complete web stack management
+          - Nginx + Apache configuration
+          - PHP-FPM multi-version support
+          - Domain and SSL management
+          - Database installation (MySQL/MariaDB/PostgreSQL)
+          
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
