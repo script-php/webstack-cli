@@ -3,8 +3,10 @@ package installer
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -332,15 +334,12 @@ func InstallApache() {
 	// Configure Apache to listen on port 8080
 	configureApache()
 
-	if err := runCommand("systemctl", "enable", "apache2"); err != nil {
-		fmt.Printf("Error enabling Apache: %v\n", err)
-	}
+	// Stop and disable Apache by default to avoid conflicts with Nginx
+	runCommand("systemctl", "stop", "apache2")
+	runCommand("systemctl", "disable", "apache2")
 
-	if err := runCommand("systemctl", "start", "apache2"); err != nil {
-		fmt.Printf("Error starting Apache: %v\n", err)
-	}
-
-	fmt.Println("✅ Apache installed successfully on port 8080")
+	fmt.Println("✅ Apache installed successfully (disabled by default)")
+	fmt.Println("📝 To enable and start Apache, run: systemctl enable apache2 && systemctl start apache2")
 }
 
 // InstallMySQL installs MySQL server
@@ -691,11 +690,93 @@ func runCommandQuiet(name string, args ...string) error {
 func configureNginx() {
 	// TODO: Apply Nginx configuration from templates
 	fmt.Println("⚙️  Configuring Nginx...")
+
+	// Apply nginx.conf from templates
+	templatePath := "/etc/webstack/templates/nginx/nginx.conf"
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = "templates/nginx/nginx.conf"
+		if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+			for _, base := range []string{"/home/dev/Desktop/webstack", "/usr/local/webstack", "/opt/webstack"} {
+				p := filepath.Join(base, "templates/nginx/nginx.conf")
+				if _, err := os.Stat(p); err == nil {
+					templatePath = p
+					break
+				}
+			}
+		}
+	}
+
+	// Read the template
+	content, err := ioutil.ReadFile(templatePath)
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Could not read nginx template: %v\n", err)
+		return
+	}
+
+	// Ensure cache directory exists
+	if err := os.MkdirAll("/var/cache/nginx/fastcgi", 0755); err != nil {
+		fmt.Printf("⚠️  Warning: Could not create nginx cache directory: %v\n", err)
+	}
+
+	// Write to /etc/nginx/nginx.conf
+	if err := ioutil.WriteFile("/etc/nginx/nginx.conf", content, 0644); err != nil {
+		fmt.Printf("⚠️  Warning: Could not write nginx configuration: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ Nginx configuration applied")
 }
 
 func configureApache() {
-	// TODO: Apply Apache configuration from templates
 	fmt.Println("⚙️  Configuring Apache...")
+
+	// Try to apply ports.conf from templates
+	templatePath := "/etc/webstack/templates/apache/ports.conf"
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = "templates/apache/ports.conf"
+		if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+			for _, base := range []string{"/home/dev/Desktop/webstack", "/usr/local/webstack", "/opt/webstack"} {
+				p := filepath.Join(base, "templates/apache/ports.conf")
+				if _, err := os.Stat(p); err == nil {
+					templatePath = p
+					break
+				}
+			}
+		}
+	}
+
+	if data, err := ioutil.ReadFile(templatePath); err == nil {
+		// Write to system Apache ports.conf
+		if err := ioutil.WriteFile("/etc/apache2/ports.conf", data, 0644); err != nil {
+			fmt.Printf("⚠️  Warning: Could not write /etc/apache2/ports.conf: %v\n", err)
+		} else {
+			fmt.Println("✅ Updated /etc/apache2/ports.conf from template")
+		}
+	} else {
+		fmt.Printf("⚠️  Warning: Apache ports.conf template not found (%s)\n", templatePath)
+	}
+
+	// Optionally update apache2.conf if template exists
+	templateApacheConf := "/etc/webstack/templates/apache/apache2.conf"
+	if _, err := os.Stat(templateApacheConf); os.IsNotExist(err) {
+		templateApacheConf = "templates/apache/apache2.conf"
+		if _, err := os.Stat(templateApacheConf); os.IsNotExist(err) {
+			for _, base := range []string{"/home/dev/Desktop/webstack", "/usr/local/webstack", "/opt/webstack"} {
+				p := filepath.Join(base, "templates/apache/apache2.conf")
+				if _, err := os.Stat(p); err == nil {
+					templateApacheConf = p
+					break
+				}
+			}
+		}
+	}
+	if data, err := ioutil.ReadFile(templateApacheConf); err == nil {
+		if err := ioutil.WriteFile("/etc/apache2/apache2.conf", data, 0644); err != nil {
+			fmt.Printf("⚠️  Warning: Could not write /etc/apache2/apache2.conf: %v\n", err)
+		} else {
+			fmt.Println("✅ Updated /etc/apache2/apache2.conf from template")
+		}
+	}
 }
 
 func configureMySQL() {

@@ -51,12 +51,22 @@ var domainListCmd = &cobra.Command{
 	},
 }
 
+var domainRebuildCmd = &cobra.Command{
+	Use:   "rebuild-configs",
+	Short: "Rebuild configuration files for all domains",
+	Long:  `Regenerate Nginx and Apache configuration files for all domains from templates. Useful after updating templates or fixing configuration issues.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		domain.RebuildConfigs()
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(domainCmd)
 	domainCmd.AddCommand(domainAddCmd)
 	domainCmd.AddCommand(domainEditCmd)
 	domainCmd.AddCommand(domainDeleteCmd)
 	domainCmd.AddCommand(domainListCmd)
+	domainCmd.AddCommand(domainRebuildCmd)
 
 	// Flags for domain add/edit
 	domainAddCmd.Flags().StringP("backend", "b", "", "Backend type: nginx or apache (default: nginx)")
