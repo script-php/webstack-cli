@@ -703,6 +703,18 @@ func configureNginx() {
 		fmt.Printf("⚠️  Warning: Could not create nginx cache directory: %v\n", err)
 	}
 
+	// Generate dhparam.pem for SSL if it doesn't exist
+	dhparamPath := "/etc/ssl/dhparam.pem"
+	if _, err := os.Stat(dhparamPath); os.IsNotExist(err) {
+		fmt.Println("🔐 Generating SSL dhparam (this may take a minute)...")
+		cmd := exec.Command("openssl", "dhparam", "-out", dhparamPath, "2048")
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("⚠️  Warning: Could not generate dhparam: %v\n", err)
+		} else {
+			fmt.Println("✅ SSL dhparam generated")
+		}
+	}
+
 	// Write to /etc/nginx/nginx.conf
 	if err := ioutil.WriteFile("/etc/nginx/nginx.conf", content, 0644); err != nil {
 		fmt.Printf("⚠️  Warning: Could not write nginx configuration: %v\n", err)

@@ -15,10 +15,12 @@ var sslCmd = &cobra.Command{
 var sslEnableCmd = &cobra.Command{
 	Use:   "enable [domain]",
 	Short: "Enable SSL certificate for a domain",
+	Long:  `Enable SSL certificate for a domain. Use --type to specify certificate type: selfsigned or letsencrypt.`,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		email, _ := cmd.Flags().GetString("email")
-		ssl.Enable(args[0], email)
+		certType, _ := cmd.Flags().GetString("type")
+		ssl.EnableWithType(args[0], email, certType)
 	},
 }
 
@@ -66,4 +68,5 @@ func init() {
 
 	// Flags for SSL enable
 	sslEnableCmd.Flags().StringP("email", "e", "", "Email address for Let's Encrypt registration")
+	sslEnableCmd.Flags().StringP("type", "t", "", "Certificate type: selfsigned or letsencrypt (default: auto-detect)")
 }

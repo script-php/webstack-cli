@@ -387,6 +387,10 @@ func saveDomains(domains []Domain) error {
 	return ioutil.WriteFile(domainsFile, data, 0644)
 }
 
+func GenerateConfig(d Domain) error {
+	return generateConfig(d)
+}
+
 func generateConfig(domain Domain) error {
 	fmt.Printf("⚙️  Generating configuration for %s...\n", domain.Name)
 
@@ -596,3 +600,39 @@ func reloadWebServers() {
 		fmt.Println("✅ Apache reloaded")
 	}
 }
+
+// DomainExists checks if a domain exists in the configuration
+func DomainExists(domainName string) bool {
+	domains, err := loadDomains()
+	if err != nil {
+		return false
+	}
+
+	for _, d := range domains {
+		if d.Name == domainName {
+			return true
+		}
+	}
+	return false
+}
+
+// GetDomain returns a domain by name
+func GetDomain(domainName string) (*Domain, error) {
+	domains, err := loadDomains()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, d := range domains {
+		if d.Name == domainName {
+			return &d, nil
+		}
+	}
+	return nil, fmt.Errorf("domain %s not found", domainName)
+}
+
+// UpdateDomain updates a domain in the configuration
+func UpdateDomain(domain Domain) error {
+	return saveDomain(domain)
+}
+
