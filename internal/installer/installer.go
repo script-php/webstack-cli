@@ -393,6 +393,34 @@ func InstallMySQL() {
 func InstallMariaDB() {
 	fmt.Println("📦 Installing MariaDB...")
 
+	// Check if already installed
+	component := components["mariadb"]
+	status := checkComponentStatus(component)
+
+	if status == Installed {
+		action := promptForAction(component.Name)
+		switch action {
+		case "keep":
+			fmt.Println("✅ Keeping existing MariaDB installation")
+			return
+		case "skip":
+			fmt.Println("⏭️  Skipping MariaDB installation")
+			return
+		case "uninstall":
+			if err := uninstallComponent(component); err != nil {
+				fmt.Printf("Error uninstalling MariaDB: %v\n", err)
+			}
+			fmt.Println("✅ MariaDB uninstalled")
+			return
+		case "reinstall":
+			fmt.Println("🔄 Reinstalling MariaDB...")
+			if err := uninstallComponent(component); err != nil {
+				fmt.Printf("Error uninstalling MariaDB: %v\n", err)
+				return
+			}
+		}
+	}
+
 	if err := runCommand("apt", "install", "-y", "mariadb-server"); err != nil {
 		fmt.Printf("Error installing MariaDB: %v\n", err)
 		return
@@ -410,6 +438,34 @@ func InstallMariaDB() {
 // InstallPostgreSQL installs PostgreSQL server
 func InstallPostgreSQL() {
 	fmt.Println("📦 Installing PostgreSQL...")
+
+	// Check if already installed
+	component := components["postgresql"]
+	status := checkComponentStatus(component)
+
+	if status == Installed {
+		action := promptForAction(component.Name)
+		switch action {
+		case "keep":
+			fmt.Println("✅ Keeping existing PostgreSQL installation")
+			return
+		case "skip":
+			fmt.Println("⏭️  Skipping PostgreSQL installation")
+			return
+		case "uninstall":
+			if err := uninstallComponent(component); err != nil {
+				fmt.Printf("Error uninstalling PostgreSQL: %v\n", err)
+			}
+			fmt.Println("✅ PostgreSQL uninstalled")
+			return
+		case "reinstall":
+			fmt.Println("🔄 Reinstalling PostgreSQL...")
+			if err := uninstallComponent(component); err != nil {
+				fmt.Printf("Error uninstalling PostgreSQL: %v\n", err)
+				return
+			}
+		}
+	}
 
 	if err := runCommand("apt", "install", "-y", "postgresql", "postgresql-contrib"); err != nil {
 		fmt.Printf("Error installing PostgreSQL: %v\n", err)
@@ -581,6 +637,34 @@ func InstallPhpMyAdmin() {
 // InstallPhpPgAdmin installs phpPgAdmin
 func InstallPhpPgAdmin() {
 	fmt.Println("📦 Installing phpPgAdmin...")
+
+	// Check if already installed
+	component := components["phppgadmin"]
+	status := checkComponentStatus(component)
+
+	if status == Installed {
+		action := promptForAction(component.Name)
+		switch action {
+		case "keep":
+			fmt.Println("✅ Keeping existing phpPgAdmin installation")
+			return
+		case "skip":
+			fmt.Println("⏭️  Skipping phpPgAdmin installation")
+			return
+		case "uninstall":
+			if err := uninstallComponent(component); err != nil {
+				fmt.Printf("Error uninstalling phpPgAdmin: %v\n", err)
+			}
+			fmt.Println("✅ phpPgAdmin uninstalled")
+			return
+		case "reinstall":
+			fmt.Println("🔄 Reinstalling phpPgAdmin...")
+			if err := uninstallComponent(component); err != nil {
+				fmt.Printf("Error uninstalling phpPgAdmin: %v\n", err)
+				return
+			}
+		}
+	}
 
 	if err := runCommand("apt", "install", "-y", "phppgadmin"); err != nil {
 		fmt.Printf("Error installing phpPgAdmin: %v\n", err)
