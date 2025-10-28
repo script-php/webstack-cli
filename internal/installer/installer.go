@@ -674,6 +674,256 @@ func InstallPhpPgAdmin() {
 	fmt.Println("✅ phpPgAdmin installed and configured at /phppgadmin")
 }
 
+// ==================== UNINSTALL FUNCTIONS ====================
+
+// UninstallAll uninstalls the complete web stack with confirmation
+func UninstallAll() {
+	fmt.Println("🚨 WebStack Complete Uninstall")
+	fmt.Println("==============================")
+	fmt.Println("⚠️  This will remove ALL components (Nginx, Apache, databases, PHP versions)")
+	fmt.Println("⚠️  Your domain data and SSL certificates will be preserved")
+	
+	if !improvedAskYesNo("Are you sure you want to uninstall everything?") {
+		fmt.Println("Uninstall cancelled.")
+		return
+	}
+
+	if !improvedAskYesNo("This action cannot be undone. Continue?") {
+		fmt.Println("Uninstall cancelled.")
+		return
+	}
+
+	fmt.Println("\n🗑️  Uninstalling components...")
+
+	// Uninstall web servers
+	UninstallNginx()
+	UninstallApache()
+
+	// Uninstall databases
+	if improvedAskYesNo("Uninstall MySQL?") {
+		UninstallMySQL()
+	}
+	if improvedAskYesNo("Uninstall MariaDB?") {
+		UninstallMariaDB()
+	}
+	if improvedAskYesNo("Uninstall PostgreSQL?") {
+		UninstallPostgreSQL()
+	}
+
+	// Uninstall PHP versions
+	phpVersions := []string{"5.6", "7.0", "7.1", "7.2", "7.3", "7.4", "8.0", "8.1", "8.2", "8.3", "8.4"}
+	for _, version := range phpVersions {
+		if checkPHPVersion(version) == Installed {
+			if improvedAskYesNo(fmt.Sprintf("Uninstall PHP %s?", version)) {
+				UninstallPHP(version)
+			}
+		}
+	}
+
+	// Uninstall web interfaces
+	if improvedAskYesNo("Uninstall phpMyAdmin?") {
+		UninstallPhpMyAdmin()
+	}
+	if improvedAskYesNo("Uninstall phpPgAdmin?") {
+		UninstallPhpPgAdmin()
+	}
+
+	fmt.Println("\n✅ Uninstall completed!")
+	fmt.Println("📝 Your domain configurations and SSL certificates remain in /etc/webstack/")
+}
+
+// UninstallNginx removes Nginx
+func UninstallNginx() {
+	component := components["nginx"]
+	status := checkComponentStatus(component)
+
+	if status != Installed {
+		fmt.Println("ℹ️  Nginx is not installed")
+		return
+	}
+
+	if !improvedAskYesNo("Uninstall Nginx?") {
+		fmt.Println("⏭️  Skipping Nginx uninstall")
+		return
+	}
+
+	if err := uninstallComponent(component); err != nil {
+		fmt.Printf("❌ Error uninstalling Nginx: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ Nginx uninstalled successfully")
+}
+
+// UninstallApache removes Apache
+func UninstallApache() {
+	component := components["apache"]
+	status := checkComponentStatus(component)
+
+	if status != Installed {
+		fmt.Println("ℹ️  Apache is not installed")
+		return
+	}
+
+	if !improvedAskYesNo("Uninstall Apache?") {
+		fmt.Println("⏭️  Skipping Apache uninstall")
+		return
+	}
+
+	if err := uninstallComponent(component); err != nil {
+		fmt.Printf("❌ Error uninstalling Apache: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ Apache uninstalled successfully")
+}
+
+// UninstallMySQL removes MySQL
+func UninstallMySQL() {
+	component := components["mysql"]
+	status := checkComponentStatus(component)
+
+	if status != Installed {
+		fmt.Println("ℹ️  MySQL is not installed")
+		return
+	}
+
+	fmt.Println("⚠️  Uninstalling MySQL will remove the database server")
+	if !improvedAskYesNo("Continue uninstalling MySQL?") {
+		fmt.Println("⏭️  Skipping MySQL uninstall")
+		return
+	}
+
+	if err := uninstallComponent(component); err != nil {
+		fmt.Printf("❌ Error uninstalling MySQL: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ MySQL uninstalled successfully")
+}
+
+// UninstallMariaDB removes MariaDB
+func UninstallMariaDB() {
+	component := components["mariadb"]
+	status := checkComponentStatus(component)
+
+	if status != Installed {
+		fmt.Println("ℹ️  MariaDB is not installed")
+		return
+	}
+
+	fmt.Println("⚠️  Uninstalling MariaDB will remove the database server")
+	if !improvedAskYesNo("Continue uninstalling MariaDB?") {
+		fmt.Println("⏭️  Skipping MariaDB uninstall")
+		return
+	}
+
+	if err := uninstallComponent(component); err != nil {
+		fmt.Printf("❌ Error uninstalling MariaDB: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ MariaDB uninstalled successfully")
+}
+
+// UninstallPostgreSQL removes PostgreSQL
+func UninstallPostgreSQL() {
+	component := components["postgresql"]
+	status := checkComponentStatus(component)
+
+	if status != Installed {
+		fmt.Println("ℹ️  PostgreSQL is not installed")
+		return
+	}
+
+	fmt.Println("⚠️  Uninstalling PostgreSQL will remove the database server")
+	if !improvedAskYesNo("Continue uninstalling PostgreSQL?") {
+		fmt.Println("⏭️  Skipping PostgreSQL uninstall")
+		return
+	}
+
+	if err := uninstallComponent(component); err != nil {
+		fmt.Printf("❌ Error uninstalling PostgreSQL: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ PostgreSQL uninstalled successfully")
+}
+
+// UninstallPHP removes a specific PHP version
+func UninstallPHP(version string) {
+	status := checkPHPVersion(version)
+
+	if status != Installed {
+		fmt.Printf("ℹ️  PHP %s is not installed\n", version)
+		return
+	}
+
+	if !improvedAskYesNo(fmt.Sprintf("Uninstall PHP %s?", version)) {
+		fmt.Printf("⏭️  Skipping PHP %s uninstall\n", version)
+		return
+	}
+
+	if err := uninstallPHP(version); err != nil {
+		fmt.Printf("❌ Error uninstalling PHP %s: %v\n", version, err)
+		return
+	}
+
+	fmt.Printf("✅ PHP %s uninstalled successfully\n", version)
+}
+
+// UninstallPhpMyAdmin removes phpMyAdmin
+func UninstallPhpMyAdmin() {
+	component := components["phpmyadmin"]
+
+	// Check if installed by looking for the package
+	cmd := exec.Command(component.CheckCmd[0], component.CheckCmd[1:]...)
+	err := cmd.Run()
+
+	if err != nil {
+		fmt.Println("ℹ️  phpMyAdmin is not installed")
+		return
+	}
+
+	if !improvedAskYesNo("Uninstall phpMyAdmin?") {
+		fmt.Println("⏭️  Skipping phpMyAdmin uninstall")
+		return
+	}
+
+	if err := uninstallComponent(component); err != nil {
+		fmt.Printf("❌ Error uninstalling phpMyAdmin: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ phpMyAdmin uninstalled successfully")
+}
+
+// UninstallPhpPgAdmin removes phpPgAdmin
+func UninstallPhpPgAdmin() {
+	component := components["phppgadmin"]
+
+	// Check if installed by looking for the package
+	cmd := exec.Command(component.CheckCmd[0], component.CheckCmd[1:]...)
+	err := cmd.Run()
+
+	if err != nil {
+		fmt.Println("ℹ️  phpPgAdmin is not installed")
+		return
+	}
+
+	if !improvedAskYesNo("Uninstall phpPgAdmin?") {
+		fmt.Println("⏭️  Skipping phpPgAdmin uninstall")
+		return
+	}
+
+	if err := uninstallComponent(component); err != nil {
+		fmt.Printf("❌ Error uninstalling phpPgAdmin: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ phpPgAdmin uninstalled successfully")
+}
+
 // Helper functions
 func runCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
@@ -702,6 +952,44 @@ func configureNginx() {
 	if err := os.MkdirAll("/var/cache/nginx/fastcgi", 0755); err != nil {
 		fmt.Printf("⚠️  Warning: Could not create nginx cache directory: %v\n", err)
 	}
+
+	// Create WebStack welcome directory
+	if err := os.MkdirAll("/var/www/webstack", 0755); err != nil {
+		fmt.Printf("⚠️  Warning: Could not create webstack welcome directory: %v\n", err)
+	}
+
+	// Deploy welcome page
+	if welcomeContent, err := templates.GetNginxTemplate("welcome.html"); err == nil {
+		if err := ioutil.WriteFile("/var/www/webstack/welcome.html", welcomeContent, 0644); err != nil {
+			fmt.Printf("⚠️  Warning: Could not write welcome page: %v\n", err)
+		} else {
+			fmt.Println("✅ Welcome page deployed")
+		}
+	}
+
+	// Deploy default server config
+	if defaultConfig, err := templates.GetNginxTemplate("default.conf"); err == nil {
+		if err := os.MkdirAll("/etc/nginx/sites-available", 0755); err == nil {
+			if err := ioutil.WriteFile("/etc/nginx/sites-available/default", defaultConfig, 0644); err == nil {
+				// Create symlink in sites-enabled
+				os.Remove("/etc/nginx/sites-enabled/default")
+				os.Symlink("/etc/nginx/sites-available/default", "/etc/nginx/sites-enabled/default")
+				fmt.Println("✅ Default server block deployed")
+			}
+		}
+	}
+
+	// Deploy error pages to /etc/webstack/error/
+	os.MkdirAll("/etc/webstack/error", 0755)
+	errorPages := []string{"403.html", "404.html", "50x.html"}
+	for _, page := range errorPages {
+		if content, err := templates.GetErrorTemplate(page); err == nil {
+			if err := ioutil.WriteFile("/etc/webstack/error/"+page, content, 0644); err == nil {
+				// Silently succeed
+			}
+		}
+	}
+	fmt.Println("✅ Error pages deployed to /etc/webstack/error/")
 
 	// Generate dhparam.pem for SSL if it doesn't exist
 	dhparamPath := "/etc/ssl/dhparam.pem"

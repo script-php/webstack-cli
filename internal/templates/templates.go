@@ -4,7 +4,7 @@ import (
 	"embed"
 )
 
-//go:embed nginx/* apache/* mysql/* php-fpm/*
+//go:embed nginx/* apache/* mysql/* php-fpm/* error/*
 var FS embed.FS
 
 // GetTemplate reads a template file from the embedded filesystem
@@ -30,4 +30,9 @@ func GetMySQLTemplate(filename string) ([]byte, error) {
 // GetPHPTemplate reads a php-fpm template
 func GetPHPTemplate(filename string) ([]byte, error) {
 	return GetTemplate("php-fpm/" + filename)
+}
+
+// GetErrorTemplate reads an error page template
+func GetErrorTemplate(filename string) ([]byte, error) {
+	return GetTemplate("error/" + filename)
 }

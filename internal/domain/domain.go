@@ -20,6 +20,9 @@ type Domain struct {
 	PHPVersion   string `json:"php_version"`
 	DocumentRoot string `json:"document_root"`
 	SSLEnabled   bool   `json:"ssl_enabled"`
+	SSLCertPath  string `json:"ssl_cert_path,omitempty"`  // Path to SSL certificate
+	SSLKeyPath   string `json:"ssl_key_path,omitempty"`   // Path to SSL private key
+	SSLEmail     string `json:"ssl_email,omitempty"`      // Email used for Let's Encrypt
 }
 
 const domainsFile = "/etc/webstack/domains.json"
@@ -48,22 +51,44 @@ func Add(domainName, backend, phpVersion string) {
 		return
 	}
 
+	// Set up domain directory structure
+	baseDir := fmt.Sprintf("/var/www/%s", domainName)
+	htdocsDir := filepath.Join(baseDir, "htdocs")
+	
 	domain := Domain{
 		Name:         domainName,
 		Backend:      backend,
 		PHPVersion:   phpVersion,
-		DocumentRoot: fmt.Sprintf("/var/www/%s", domainName),
+		DocumentRoot: htdocsDir, // Point to htdocs as the web root
 		SSLEnabled:   false,
 	}
 
-	// Create document root
-	if err := os.MkdirAll(domain.DocumentRoot, 0755); err != nil {
-		fmt.Printf("Error creating document root: %v\n", err)
-		return
+	// Create directory structure: /var/www/domain/{ htdocs, logs, configs, error }
+	dirs := []string{
+		htdocsDir,
+		filepath.Join(baseDir, "logs"),
+		filepath.Join(baseDir, "configs"),
+		filepath.Join(baseDir, "error"),
 	}
+
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Printf("Error creating directory %s: %v\n", dir, err)
+			return
+		}
+	}
+
+	fmt.Printf("📁 Created domain directory structure:\n")
+	fmt.Printf("   %s/htdocs     - Web root (public files)\n", baseDir)
+	fmt.Printf("   %s/logs       - Log files\n", baseDir)
+	fmt.Printf("   %s/configs    - Additional nginx configurations\n", baseDir)
+	fmt.Printf("   %s/error      - Error pages symlink\n", baseDir)
 
 	// Create default index.php
 	createDefaultIndex(domain.DocumentRoot, domainName, phpVersion)
+
+	// Create error folder (error pages served from /etc/webstack/error/)
+	os.MkdirAll(filepath.Join(baseDir, "error"), 0755)
 
 	// Save domain configuration
 	if err := saveDomain(domain); err != nil {
@@ -176,6 +201,25 @@ func Delete(domainName string) {
 			// Remove configuration files
 			removeConfig(domain)
 
+			// Ask if user wants to delete the domain folder
+			baseDir := filepath.Join("/var/www", domainName)
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Printf("Delete domain folder %s? (y/N): ", baseDir)
+			response, _ := reader.ReadString('\n')
+			response = strings.TrimSpace(strings.ToLower(response))
+
+			if response == "y" || response == "yes" {
+				// Delete the entire domain folder
+				if err := os.RemoveAll(baseDir); err != nil {
+					fmt.Printf("⚠️  Warning: Could not delete domain folder: %v\n", err)
+				} else {
+					fmt.Printf("✅ Domain folder deleted: %s\n", baseDir)
+				}
+			} else {
+				fmt.Printf("ℹ️  Domain folder preserved: %s\n", baseDir)
+				fmt.Printf("   Contains: htdocs/, logs/, configs/, error/\n")
+			}
+
 			// Remove from domains slice
 			domains = append(domains[:i], domains[i+1:]...)
 
@@ -188,7 +232,6 @@ func Delete(domainName string) {
 			reloadWebServers()
 
 			fmt.Printf("✅ Domain %s deleted successfully\n", domainName)
-			fmt.Printf("Note: Document root %s was preserved\n", domain.DocumentRoot)
 			break
 		}
 	}
@@ -402,18 +445,53 @@ func generateConfig(domain Domain) error {
 		"PHPSocket":    fmt.Sprintf("unix:/run/php/php%s-fpm.sock", domain.PHPVersion),
 	}
 
-	if domain.Backend == "nginx" {
-		// For Nginx backend, use the direct PHP-FPM template
-		if err := generateNginxConfig(domain.Name, templateVars, "domain"); err != nil {
-			return err
+	// If SSL is enabled for this domain, try to include certificate paths and use SSL templates
+	useSSL := false
+	if domain.SSLEnabled {
+		certPath, keyPath, err := loadSSLCertPaths(domain.Name)
+		if err != nil {
+			// SSL is enabled but cert paths are missing or empty
+			// Fall back to non-SSL config and warn user
+			fmt.Printf("⚠️  SSL enabled but certificate paths missing for %s. Generating non-SSL config.\n", domain.Name)
+			fmt.Printf("    Reason: %v\n", err)
+		} else {
+			// Add cert paths to template variables
+			templateVars["SSLCert"] = certPath
+			templateVars["SSLKey"] = keyPath
+			useSSL = true
 		}
-	} else if domain.Backend == "apache" {
-		// For Apache backend, create Nginx proxy config AND Apache config
-		if err := generateNginxConfig(domain.Name, templateVars, "proxy"); err != nil {
-			return err
+	}
+
+	if useSSL {
+		// SSL-enabled paths
+		if domain.Backend == "nginx" {
+			if err := generateNginxConfig(domain.Name, templateVars, "domain-ssl"); err != nil {
+				return err
+			}
+		} else if domain.Backend == "apache" {
+			// For Apache backend, nginx handles SSL (proxy-ssl) and Apache stays same
+			if err := generateNginxConfig(domain.Name, templateVars, "proxy-ssl"); err != nil {
+				return err
+			}
+			if err := generateApacheConfig(domain.Name, templateVars); err != nil {
+				return err
+			}
 		}
-		if err := generateApacheConfig(domain.Name, templateVars); err != nil {
-			return err
+	} else {
+		// Non-SSL paths (existing behavior)
+		if domain.Backend == "nginx" {
+			// For Nginx backend, use the direct PHP-FPM template
+			if err := generateNginxConfig(domain.Name, templateVars, "domain"); err != nil {
+				return err
+			}
+		} else if domain.Backend == "apache" {
+			// For Apache backend, create Nginx proxy config AND Apache config
+			if err := generateNginxConfig(domain.Name, templateVars, "proxy"); err != nil {
+				return err
+			}
+			if err := generateApacheConfig(domain.Name, templateVars); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -427,6 +505,10 @@ func generateNginxConfig(domainName string, vars map[string]interface{}, configT
 	templateFilename := "domain.conf"
 	if configType == "proxy" {
 		templateFilename = "proxy.conf"
+	} else if configType == "domain-ssl" {
+		templateFilename = "domain-ssl.conf"
+	} else if configType == "proxy-ssl" {
+		templateFilename = "proxy-ssl.conf"
 	}
 
 	content, err := templates.GetNginxTemplate(templateFilename)
@@ -634,5 +716,24 @@ func GetDomain(domainName string) (*Domain, error) {
 // UpdateDomain updates a domain in the configuration
 func UpdateDomain(domain Domain) error {
 	return saveDomain(domain)
+}
+
+// loadSSLCertPaths loads certificate and key paths for a domain from domains.json
+func loadSSLCertPaths(domainName string) (string, string, error) {
+	domains, err := loadDomains()
+	if err != nil {
+		return "", "", fmt.Errorf("could not load domains: %v", err)
+	}
+
+	for _, d := range domains {
+		if d.Name == domainName && d.SSLEnabled {
+			if d.SSLCertPath == "" || d.SSLKeyPath == "" {
+				return "", "", fmt.Errorf("domain %s has SSL enabled but cert paths are empty", domainName)
+			}
+			return d.SSLCertPath, d.SSLKeyPath, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("no enabled SSL certificate found for %s", domainName)
 }
 

@@ -169,7 +169,7 @@ func EnableWithType(domainName, email, certType string) {
 	}
 
 	// Update domain configuration to use SSL
-	if err := enableSSLForDomain(domainName); err != nil {
+	if err := enableSSLForDomain(domainName, certPath, keyPath, email); err != nil {
 		fmt.Printf("Error updating domain configuration: %v\n", err)
 		return
 	}
@@ -492,7 +492,7 @@ func saveAndEnableSSL(domainName, certPath, keyPath string) error {
 	}
 
 	// Update domain configuration to use SSL
-	if err := enableSSLForDomain(domainName); err != nil {
+	if err := enableSSLForDomain(domainName, certPath, keyPath, "self-signed@localhost"); err != nil {
 		return fmt.Errorf("error updating domain configuration: %v", err)
 	}
 
@@ -572,16 +572,18 @@ func saveSSLCerts(certs []SSLCertificate) error {
 	return ioutil.WriteFile(sslConfigFile, data, 0644)
 }
 
-func enableSSLForDomain(domainName string) error {
-	// TODO: Update domain configuration to enable SSL
+func enableSSLForDomain(domainName, certPath, keyPath, email string) error {
 	// Get the domain from domain configuration
 	d, err := domain.GetDomain(domainName)
 	if err != nil {
 		return fmt.Errorf("could not find domain: %v", err)
 	}
 
-	// Update SSL flag
+	// Update SSL-related fields
 	d.SSLEnabled = true
+	d.SSLCertPath = certPath
+	d.SSLKeyPath = keyPath
+	d.SSLEmail = email
 
 	// Save updated domain
 	if err := domain.UpdateDomain(*d); err != nil {
@@ -593,15 +595,17 @@ func enableSSLForDomain(domainName string) error {
 }
 
 func disableSSLForDomain(domainName string) error {
-	// TODO: Update domain configuration to disable SSL
 	// Get the domain from domain configuration
 	d, err := domain.GetDomain(domainName)
 	if err != nil {
 		return fmt.Errorf("could not find domain: %v", err)
 	}
 
-	// Update SSL flag
+	// Clear SSL-related fields
 	d.SSLEnabled = false
+	d.SSLCertPath = ""
+	d.SSLKeyPath = ""
+	d.SSLEmail = ""
 
 	// Save updated domain
 	if err := domain.UpdateDomain(*d); err != nil {
