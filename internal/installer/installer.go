@@ -727,6 +727,24 @@ func configureNginx() {
 func configureApache() {
 	fmt.Println("⚙️  Configuring Apache...")
 
+	// Enable required Apache modules
+	requiredModules := []string{
+		"rewrite",
+		"headers",
+		"proxy",
+		"proxy_http",
+		"ssl",
+		"php-fpm",
+	}
+
+	for _, module := range requiredModules {
+		if err := runCommandQuiet("a2enmod", module); err != nil {
+			// Some modules might not exist depending on Apache version
+			// Continue anyway as they're optional
+		}
+	}
+	fmt.Println("✅ Apache modules enabled")
+
 	// Apply ports.conf from embedded templates
 	if data, err := templates.GetApacheTemplate("ports.conf"); err == nil {
 		// Write to system Apache ports.conf
