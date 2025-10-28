@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
+	"webstack-cli/internal/templates"
 )
 
 // ComponentStatus represents the status of a component
@@ -691,23 +691,8 @@ func configureNginx() {
 	// TODO: Apply Nginx configuration from templates
 	fmt.Println("⚙️  Configuring Nginx...")
 
-	// Apply nginx.conf from templates
-	templatePath := "/etc/webstack/templates/nginx/nginx.conf"
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		templatePath = "templates/nginx/nginx.conf"
-		if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-			for _, base := range []string{"/home/dev/Desktop/webstack", "/usr/local/webstack", "/opt/webstack"} {
-				p := filepath.Join(base, "templates/nginx/nginx.conf")
-				if _, err := os.Stat(p); err == nil {
-					templatePath = p
-					break
-				}
-			}
-		}
-	}
-
-	// Read the template
-	content, err := ioutil.ReadFile(templatePath)
+	// Read template from embedded filesystem
+	content, err := templates.GetNginxTemplate("nginx.conf")
 	if err != nil {
 		fmt.Printf("⚠️  Warning: Could not read nginx template: %v\n", err)
 		return
@@ -730,22 +715,8 @@ func configureNginx() {
 func configureApache() {
 	fmt.Println("⚙️  Configuring Apache...")
 
-	// Try to apply ports.conf from templates
-	templatePath := "/etc/webstack/templates/apache/ports.conf"
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		templatePath = "templates/apache/ports.conf"
-		if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-			for _, base := range []string{"/home/dev/Desktop/webstack", "/usr/local/webstack", "/opt/webstack"} {
-				p := filepath.Join(base, "templates/apache/ports.conf")
-				if _, err := os.Stat(p); err == nil {
-					templatePath = p
-					break
-				}
-			}
-		}
-	}
-
-	if data, err := ioutil.ReadFile(templatePath); err == nil {
+	// Apply ports.conf from embedded templates
+	if data, err := templates.GetApacheTemplate("ports.conf"); err == nil {
 		// Write to system Apache ports.conf
 		if err := ioutil.WriteFile("/etc/apache2/ports.conf", data, 0644); err != nil {
 			fmt.Printf("⚠️  Warning: Could not write /etc/apache2/ports.conf: %v\n", err)
@@ -753,24 +724,11 @@ func configureApache() {
 			fmt.Println("✅ Updated /etc/apache2/ports.conf from template")
 		}
 	} else {
-		fmt.Printf("⚠️  Warning: Apache ports.conf template not found (%s)\n", templatePath)
+		fmt.Printf("⚠️  Warning: Apache ports.conf template not found\n")
 	}
 
 	// Optionally update apache2.conf if template exists
-	templateApacheConf := "/etc/webstack/templates/apache/apache2.conf"
-	if _, err := os.Stat(templateApacheConf); os.IsNotExist(err) {
-		templateApacheConf = "templates/apache/apache2.conf"
-		if _, err := os.Stat(templateApacheConf); os.IsNotExist(err) {
-			for _, base := range []string{"/home/dev/Desktop/webstack", "/usr/local/webstack", "/opt/webstack"} {
-				p := filepath.Join(base, "templates/apache/apache2.conf")
-				if _, err := os.Stat(p); err == nil {
-					templateApacheConf = p
-					break
-				}
-			}
-		}
-	}
-	if data, err := ioutil.ReadFile(templateApacheConf); err == nil {
+	if data, err := templates.GetApacheTemplate("apache2.conf"); err == nil {
 		if err := ioutil.WriteFile("/etc/apache2/apache2.conf", data, 0644); err != nil {
 			fmt.Printf("⚠️  Warning: Could not write /etc/apache2/apache2.conf: %v\n", err)
 		} else {

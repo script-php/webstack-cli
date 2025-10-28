@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"webstack-cli/internal/templates"
 )
 
 // Domain represents a domain configuration
@@ -418,34 +419,13 @@ func generateConfig(domain Domain) error {
 func generateNginxConfig(domainName string, vars map[string]interface{}, configType string) error {
 	// configType can be "domain" (direct PHP-FPM) or "proxy" (Apache reverse proxy)
 
-	// Read template
+	// Read template from embedded filesystem
 	templateFilename := "domain.conf"
 	if configType == "proxy" {
 		templateFilename = "proxy.conf"
 	}
 
-	templatePath := filepath.Join("/etc/webstack/templates/nginx", templateFilename)
-	// Try to find template in the source directory if not in /etc
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		// Look in relative path
-		templatePath = filepath.Join("templates/nginx", templateFilename)
-		if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-			// Try absolute path from common locations
-			for _, basePath := range []string{
-				"/home/dev/Desktop/webstack",
-				"/usr/local/webstack",
-				"/opt/webstack",
-			} {
-				fullPath := filepath.Join(basePath, "templates/nginx", templateFilename)
-				if _, err := os.Stat(fullPath); err == nil {
-					templatePath = fullPath
-					break
-				}
-			}
-		}
-	}
-
-	content, err := ioutil.ReadFile(templatePath)
+	content, err := templates.GetNginxTemplate(templateFilename)
 	if err != nil {
 		return fmt.Errorf("could not read nginx template (%s): %v", templateFilename, err)
 	}
@@ -508,28 +488,8 @@ func generateNginxConfig(domainName string, vars map[string]interface{}, configT
 }
 
 func generateApacheConfig(domainName string, vars map[string]interface{}) error {
-	// Read template
-	templatePath := "/etc/webstack/templates/apache/domain.conf"
-	// Try to find template in the source directory if not in /etc
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		// Look in relative path
-		templatePath = "templates/apache/domain.conf"
-		if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-			// Try absolute path from common locations
-			for _, path := range []string{
-				"/home/dev/Desktop/webstack/templates/apache/domain.conf",
-				"/usr/local/webstack/templates/apache/domain.conf",
-				"/opt/webstack/templates/apache/domain.conf",
-			} {
-				if _, err := os.Stat(path); err == nil {
-					templatePath = path
-					break
-				}
-			}
-		}
-	}
-
-	content, err := ioutil.ReadFile(templatePath)
+	// Read template from embedded filesystem
+	content, err := templates.GetApacheTemplate("domain.conf")
 	if err != nil {
 		return fmt.Errorf("could not read apache template: %v", err)
 	}
