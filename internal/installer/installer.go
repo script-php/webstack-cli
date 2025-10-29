@@ -77,6 +77,16 @@ var components = map[string]Component{
 
 // checkComponentStatus checks if a component is already installed
 func checkComponentStatus(component Component) ComponentStatus {
+	// For packages, use dpkg -l and check for "ii" status (installed)
+	if len(component.CheckCmd) == 3 && component.CheckCmd[0] == "dpkg" && component.CheckCmd[1] == "-l" {
+		packageName := component.CheckCmd[2]
+		if isPackageInstalled(packageName) {
+			return Installed
+		}
+		return NotInstalled
+	}
+	
+	// For other check commands, use exit code
 	cmd := exec.Command(component.CheckCmd[0], component.CheckCmd[1:]...)
 	err := cmd.Run()
 	if err != nil {
@@ -312,6 +322,21 @@ Listen %d
 			fmt.Printf("⚠️  Warning: Could not update Apache ports.conf: %v\n", err)
 		} else {
 			fmt.Printf("✅ Apache reconfigured for port %d (backend mode)\n", apachePort)
+		}
+		
+		// Regenerate default VirtualHost for port 8080
+		if defaultConfig, err := templates.GetApacheTemplate("default.conf"); err == nil {
+			tmpl, err := template.New("apache-default").Parse(string(defaultConfig))
+			if err == nil {
+				var buf strings.Builder
+				tmpl.Execute(&buf, map[string]interface{}{
+					"ApachePort": apachePort,
+				})
+				
+				if err := ioutil.WriteFile("/etc/apache2/sites-available/001-default.conf", []byte(buf.String()), 0644); err == nil {
+					fmt.Println("✅ Apache default VirtualHost updated for port 8080")
+				}
+			}
 		}
 		
 		// Update Apache config
