@@ -13,53 +13,36 @@ A comprehensive command-line tool for managing a complete web development stack 
 
 ## Installation
 
-### Quick Install (CLI Tool Only)
+### Quick Start (Recommended)
 
-For most users who want to manually manage their web stack:
-```bash
-curl -fsSL https://your-domain.com/install-cli.sh | sudo bash
-```
-
-### Install with Service Integration
-
-For automated management with systemd service and cron jobs:
+Complete system setup with CLI, service integration, and directory structure:
 ```bash
 curl -fsSL https://your-domain.com/install.sh | sudo bash
 ```
 
-### Alternative Installation Methods
+This installs:
+- ✅ WebStack CLI binary to `/usr/local/bin`
+- ✅ System directories with proper permissions
+- ✅ Systemd service integration
+- ✅ Log rotation configuration
+- ✅ Foundation for web control panel (coming soon)
 
-#### GitHub Releases
+### Manual Installation
+
+For manual control:
 ```bash
 # Download latest release
-wget https://github.com/yourusername/webstack-cli/releases/latest/download/webstack-linux-amd64
+wget https://github.com/script-php/webstack-cli/releases/latest/download/webstack-linux-amd64
 chmod +x webstack-linux-amd64
 sudo mv webstack-linux-amd64 /usr/local/bin/webstack
 ```
 
-#### APT Repository (Ubuntu/Debian)
+### Build from Source
 ```bash
-curl -fsSL https://your-domain.com/install-apt.sh | sudo bash
-sudo apt install webstack-cli
-```
-
-#### Snap Package
-```bash
-sudo snap install webstack-cli --classic
-```
-
-#### Build from Source
-```bash
-git clone https://github.com/yourusername/webstack-cli.git
+git clone https://github.com/script-php/webstack-cli.git
 cd webstack-cli
 make build
 sudo make install
-```
-
-#### Docker
-```bash
-docker pull your-registry/webstack-cli:latest
-docker run --rm -it your-registry/webstack-cli:latest --help
 ```
 
 ## Usage
@@ -116,7 +99,8 @@ sudo webstack domain delete example.com
 
 ```bash
 # Enable SSL for a domain
-sudo webstack ssl enable example.com --email admin@example.com
+sudo webstack ssl enable example.com --email admin@example.com --type letsencrypt
+sudo webstack ssl enable example.com --email admin@example.com --type selfsigned
 
 # Disable SSL
 sudo webstack ssl disable example.com

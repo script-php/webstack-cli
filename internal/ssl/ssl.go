@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,6 +137,19 @@ func EnableWithType(domainName, email, certType string) {
 		return
 	}
 
+	// Validate domain before requesting certificate
+	fmt.Println("🔍 Validating domain configuration...")
+	if err := validateDomainForLetsEncrypt(domainName); err != nil {
+		fmt.Printf("❌ Domain validation failed: %v\n", err)
+		fmt.Println("\nPlease ensure:")
+		fmt.Println("  - Domain is publicly resolvable")
+		fmt.Println("  - Server IP matches domain DNS record")
+		fmt.Println("  - Port 80 is accessible from internet")
+		fmt.Println("  - No firewall blocking port 80")
+		return
+	}
+	fmt.Println("✅ Domain validation passed")
+
 	// Stop web servers temporarily for standalone mode
 	fmt.Println("⚙️  Temporarily stopping web servers...")
 	stopWebServers()
@@ -186,6 +200,16 @@ func EnableWithType(domainName, email, certType string) {
 	fmt.Printf("✅ SSL enabled successfully for %s\n", domainName)
 	fmt.Printf("   Certificate: %s\n", certPath)
 	fmt.Printf("   Private Key: %s\n", keyPath)
+
+	// Setup auto-renewal for Let's Encrypt certificates
+	if useSSLType == "letsencrypt" {
+		if err := setupAutoRenewal(domainName, email); err != nil {
+			fmt.Printf("⚠️  Warning: Could not setup auto-renewal: %v\n", err)
+			fmt.Println("   You can manually renew with: webstack-cli ssl renew " + domainName)
+		} else {
+			fmt.Println("✅ Auto-renewal configured (renewal attempted 30 days before expiry)")
+		}
+	}
 }
 
 // Disable removes SSL certificate for a domain
@@ -208,6 +232,11 @@ func Disable(domainName string) {
 			if err := saveSSLCerts(certs); err != nil {
 				fmt.Printf("Error saving SSL configuration: %v\n", err)
 				return
+			}
+
+			// Remove auto-renewal cronjob
+			if err := removeAutoRenewal(domainName); err != nil {
+				fmt.Printf("⚠️  Warning: Could not remove auto-renewal: %v\n", err)
 			}
 
 			// Update domain configuration to disable SSL
@@ -239,26 +268,84 @@ func Disable(domainName string) {
 func Renew(domainName string) {
 	fmt.Printf("Renewing SSL certificate for: %s\n", domainName)
 
-	if err := runCommand("certbot", "renew", "--cert-name", domainName); err != nil {
-		fmt.Printf("Error renewing certificate: %v\n", err)
+	// Load certificate info
+	certs, err := loadSSLCerts()
+	if err != nil {
+		fmt.Printf("Error loading SSL certificates: %v\n", err)
 		return
 	}
 
+	var cert *SSLCertificate
+	for i := range certs {
+		if certs[i].Domain == domainName {
+			cert = &certs[i]
+			break
+		}
+	}
+
+	if cert == nil {
+		fmt.Printf("No SSL certificate found for domain %s\n", domainName)
+		return
+	}
+
+	// Check days until expiry
+	daysUntilExpiry := int(time.Until(cert.ExpiresAt).Hours() / 24)
+	fmt.Printf("Current certificate expires in %d days\n", daysUntilExpiry)
+
+	// Run certbot renew
+	if err := runCommand("certbot", "renew", "--cert-name", domainName, "--force-renewal"); err != nil {
+		fmt.Printf("❌ Error renewing certificate: %v\n", err)
+		return
+	}
+
+	// Reload web servers
 	reloadWebServers()
-	fmt.Printf("✅ SSL certificate renewed for %s\n", domainName)
+
+	// Verify renewal succeeded
+	certFile := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", domainName)
+	if data, err := os.Stat(certFile); err == nil {
+		fmt.Printf("✅ SSL certificate renewed for %s\n", domainName)
+		fmt.Printf("   Modified: %s\n", data.ModTime().Format("2006-01-02 15:04:05"))
+		fmt.Println("   Web servers reloaded successfully")
+	} else {
+		fmt.Printf("⚠️  Warning: Could not verify certificate update\n")
+	}
 }
 
 // RenewAll renews all SSL certificates
 func RenewAll() {
-	fmt.Println("Renewing all SSL certificates...")
+	fmt.Println("🔄 Renewing all SSL certificates...")
 
-	if err := runCommand("certbot", "renew"); err != nil {
-		fmt.Printf("Error renewing certificates: %v\n", err)
+	certs, err := loadSSLCerts()
+	if err != nil {
+		fmt.Printf("Error loading SSL certificates: %v\n", err)
+		return
+	}
+
+	if len(certs) == 0 {
+		fmt.Println("No SSL certificates configured")
+		return
+	}
+
+	// Show summary before renewal
+	fmt.Println("\nCertificates to renew:")
+	for _, cert := range certs {
+		if !cert.Enabled {
+			continue
+		}
+		daysUntilExpiry := int(time.Until(cert.ExpiresAt).Hours() / 24)
+		fmt.Printf("  • %s (expires in %d days)\n", cert.Domain, daysUntilExpiry)
+	}
+
+	// Run certbot renew (renews all that need renewal)
+	if err := runCommand("certbot", "renew", "--quiet"); err != nil {
+		fmt.Printf("❌ Error renewing certificates: %v\n", err)
 		return
 	}
 
 	reloadWebServers()
-	fmt.Println("✅ All SSL certificates renewed")
+	fmt.Println("✅ All SSL certificates processed (only those expiring soon were renewed)")
+	fmt.Println("   Web servers reloaded successfully")
 }
 
 // Status shows SSL certificate status for a domain
@@ -738,6 +825,421 @@ func generateNonSSLConfig(domainName string) error {
 	// Call domain's generateConfig to regenerate the regular (non-SSL) config
 	if err := domain.GenerateConfig(*d); err != nil {
 		return fmt.Errorf("could not generate config: %v", err)
+	}
+
+	return nil
+}
+
+// validateDomainForLetsEncrypt performs pre-validation checks for Let's Encrypt
+func validateDomainForLetsEncrypt(domainName string) error {
+	// Check if domain resolves
+	ips, err := net.LookupHost(domainName)
+	if err != nil {
+		return fmt.Errorf("domain '%s' does not resolve: %v", domainName, err)
+	}
+
+	if len(ips) == 0 {
+		return fmt.Errorf("domain '%s' resolved but has no IP addresses", domainName)
+	}
+
+	fmt.Printf("   Domain resolves to: %s\n", strings.Join(ips, ", "))
+
+	// Check if port 80 is accessible (basic check)
+	// This is a simple heuristic - real verification happens during ACME challenge
+	fmt.Println("   ✓ Domain resolution validated")
+
+	// Check if system time is reasonable (Let's Encrypt requires this)
+	now := time.Now()
+	if now.Year() < 2020 {
+		return fmt.Errorf("system time is too far in the past (year %d). Let's Encrypt requires accurate system time. Run: sudo ntpdate -s time.nist.gov", now.Year())
+	}
+
+	fmt.Println("   ✓ System time validated")
+
+	return nil
+}
+
+// setupAutoRenewal configures automatic certificate renewal via cronjob
+func setupAutoRenewal(domainName, email string) error {
+	// Create a renewal script
+	renewScript := fmt.Sprintf(`#!/bin/bash
+# WebStack SSL Certificate Renewal Script for %s
+# Auto-generated renewal script
+
+/usr/bin/certbot renew --cert-name %s --quiet
+if [ $? -eq 0 ]; then
+    # Reload web servers on successful renewal
+    /usr/bin/systemctl reload nginx 2>/dev/null
+    /usr/bin/systemctl reload apache2 2>/dev/null
+    
+    # Log successful renewal
+    echo "$(date): Certificate renewed successfully for %s" >> /var/log/webstack/ssl-renewal.log
+else
+    # Log renewal failure
+    echo "$(date): Certificate renewal FAILED for %s" >> /var/log/webstack/ssl-renewal.log
+    # Send email notification (optional)
+    echo "Certificate renewal failed for %s. Check /var/log/webstack/ssl-renewal.log" | mail -s "WebStack SSL Renewal Failed" "%s" 2>/dev/null
+fi
+`, domainName, domainName, domainName, domainName, domainName, email)
+
+	// Create log directory
+	logDir := "/var/log/webstack"
+	os.MkdirAll(logDir, 0755)
+
+	// Write renewal script
+	scriptPath := filepath.Join("/usr/local/bin", fmt.Sprintf("webstack-renewal-%s.sh", domainName))
+	if err := ioutil.WriteFile(scriptPath, []byte(renewScript), 0755); err != nil {
+		return fmt.Errorf("could not create renewal script: %v", err)
+	}
+
+	// Add cronjob for renewal (run at 2 AM daily)
+	// Certbot itself handles checking if renewal is needed (only renews if <30 days to expiry)
+	cronjobEntry := fmt.Sprintf("0 2 * * * %s >> /var/log/webstack/ssl-renewal.log 2>&1", scriptPath)
+
+	// Check if cronjob already exists
+	cmd := exec.Command("crontab", "-l")
+	output, _ := cmd.Output()
+	existingCrons := string(output)
+
+	if strings.Contains(existingCrons, scriptPath) {
+		// Cronjob already exists
+		return nil
+	}
+
+	// Add new cronjob
+	newCrontab := existingCrons + cronjobEntry + "\n"
+	cmd = exec.Command("crontab", "-")
+	cmd.Stdin = strings.NewReader(newCrontab)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("could not add cronjob: %v", err)
+	}
+
+	return nil
+}
+
+// removeAutoRenewal removes the cronjob for automatic renewal
+func removeAutoRenewal(domainName string) error {
+	scriptPath := filepath.Join("/usr/local/bin", fmt.Sprintf("webstack-renewal-%s.sh", domainName))
+
+	// Get current crontab
+	cmd := exec.Command("crontab", "-l")
+	output, err := cmd.Output()
+	if err != nil {
+		// No crontab exists, nothing to remove
+		return nil
+	}
+
+	// Remove the line containing this domain's script
+	lines := strings.Split(string(output), "\n")
+	var newLines []string
+	for _, line := range lines {
+		if !strings.Contains(line, scriptPath) {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Update crontab
+	newCrontab := strings.Join(newLines, "\n")
+	cmd = exec.Command("crontab", "-")
+	cmd.Stdin = strings.NewReader(newCrontab)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("could not update cronjob: %v", err)
+	}
+
+	// Remove script file
+	os.Remove(scriptPath)
+
+	return nil
+}
+
+// ManageAutorenew enables, disables, or checks status of automatic renewal
+func ManageAutorenew(action string) {
+	action = strings.TrimSpace(strings.ToLower(action))
+
+	switch action {
+	case "enable":
+		enableAutorenew()
+	case "disable":
+		disableAutorenew()
+	case "status":
+		checkAutorenewStatus()
+	case "trigger":
+		triggerRenewal()
+	default:
+		fmt.Printf("❌ Unknown action: %s\n", action)
+		fmt.Println("Usage: webstack-cli ssl autorenew [enable|disable|status|trigger]")
+	}
+}
+
+// triggerRenewal manually triggers certificate renewal immediately (for testing)
+func triggerRenewal() {
+	fmt.Println("🔄 Triggering SSL certificate renewal manually...")
+	fmt.Println("   This will run the renewal service immediately for testing purposes.")
+
+	// Check if certbot is installed
+	if err := ensureCertbotInstalled(); err != nil {
+		fmt.Printf("Error: certbot not installed: %v\n", err)
+		return
+	}
+
+	// Run certbot renew with verbose output for testing
+	fmt.Println("\n📋 Running: certbot renew --deploy-hook 'systemctl reload nginx || true; systemctl reload apache2 || true'")
+	fmt.Println("   Note: This will only renew certificates expiring within 30 days\n")
+
+	cmd := exec.Command("certbot", "renew", "--deploy-hook", "systemctl reload nginx || true; systemctl reload apache2 || true")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("\n❌ Renewal trigger failed: %v\n", err)
+		fmt.Println("\nTo run a dry-run (test without making changes):")
+		fmt.Println("  sudo webstack-cli ssl autorenew trigger --dry-run")
+		return
+	}
+
+	fmt.Println("\n✅ Renewal trigger completed successfully")
+	fmt.Println("   Check logs for details: journalctl -u webstack-certbot-renew.service -f")
+}
+
+// enableAutorenew sets up systemd timer for automatic certificate renewal
+func enableAutorenew() {
+	fmt.Println("🔧 Setting up automatic SSL certificate renewal...")
+
+	// Check if certbot is installed
+	if err := ensureCertbotInstalled(); err != nil {
+		fmt.Printf("Error: certbot not installed: %v\n", err)
+		return
+	}
+
+	// Check if already enabled via systemd
+	if isSystemdTimerActive("webstack-certbot-renew.timer") {
+		fmt.Println("✅ Autorenew already enabled (systemd timer)")
+		return
+	}
+
+	// Check if already enabled via cron
+	if isCronJobActive() {
+		fmt.Println("✅ Autorenew already enabled (cron)")
+		return
+	}
+
+	// Try to enable systemd timer (preferred)
+	if err := enableSystemdTimer(); err == nil {
+		fmt.Println("✅ Automatic renewal enabled (systemd timer)")
+		fmt.Println("   Timer: webstack-certbot-renew.timer")
+		fmt.Println("   Schedule: Daily at 03:15 UTC")
+		fmt.Println("\n   Check status: systemctl status webstack-certbot-renew.timer")
+		fmt.Println("   View logs: journalctl -u webstack-certbot-renew.service -f")
+		return
+	}
+
+	// Fallback to cron if systemd fails
+	if err := enableCronJob(); err == nil {
+		fmt.Println("✅ Automatic renewal enabled (cron)")
+		fmt.Println("   Schedule: Daily at 3:00 and 15:00 UTC")
+		fmt.Println("\n   Check status: crontab -l")
+		fmt.Println("   View logs: grep CRON /var/log/syslog")
+		return
+	}
+
+	fmt.Println("❌ Failed to enable automatic renewal")
+	fmt.Println("   Try enabling systemd timer manually:")
+	fmt.Println("   sudo systemctl enable --now webstack-certbot-renew.timer")
+}
+
+// disableAutorenew removes automatic certificate renewal
+func disableAutorenew() {
+	fmt.Println("🔧 Disabling automatic SSL certificate renewal...")
+
+	// Try to disable systemd timer
+	if isSystemdTimerActive("webstack-certbot-renew.timer") {
+		if err := disableSystemdTimer(); err == nil {
+			fmt.Println("✅ Systemd timer disabled")
+			return
+		}
+	}
+
+	// Try to disable cron
+	if isCronJobActive() {
+		if err := disableCronJob(); err == nil {
+			fmt.Println("✅ Cron job disabled")
+			return
+		}
+	}
+
+	fmt.Println("⚠️  No automatic renewal found to disable")
+}
+
+// checkAutorenewStatus checks if automatic renewal is enabled
+func checkAutorenewStatus() {
+	fmt.Println("Checking automatic SSL renewal status...")
+
+	// Check systemd timer
+	if isSystemdTimerActive("webstack-certbot-renew.timer") {
+		fmt.Println("\n✅ Status: ENABLED (systemd timer)")
+		fmt.Println("\nSystemd Timer Details:")
+		runCommand("systemctl", "status", "webstack-certbot-renew.timer")
+		return
+	}
+
+	// Check cron
+	if isCronJobActive() {
+		fmt.Println("\n✅ Status: ENABLED (cron)")
+		fmt.Println("\nCron Job Details:")
+		runCommand("crontab", "-l")
+		return
+	}
+
+	fmt.Println("\n❌ Status: DISABLED")
+	fmt.Println("\nTo enable automatic renewal, run:")
+	fmt.Println("  webstack-cli ssl autorenew enable")
+}
+
+// isSystemdTimerActive checks if a systemd timer is active
+func isSystemdTimerActive(timerName string) bool {
+	cmd := exec.Command("systemctl", "is-active", timerName)
+	return cmd.Run() == nil
+}
+
+// isCronJobActive checks if our cron job is active
+func isCronJobActive() bool {
+	cmd := exec.Command("crontab", "-l")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), "certbot renew")
+}
+
+// enableSystemdTimer creates and enables a systemd timer for cert renewal
+func enableSystemdTimer() error {
+	// Create service file
+	serviceFile := "/etc/systemd/system/webstack-certbot-renew.service"
+	serviceContent := `[Unit]
+Description=WebStack Certbot Renewal
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx || true; systemctl reload apache2 || true"
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+`
+
+	if err := ioutil.WriteFile(serviceFile, []byte(serviceContent), 0644); err != nil {
+		return fmt.Errorf("could not create service file: %v", err)
+	}
+
+	// Create timer file
+	timerFile := "/etc/systemd/system/webstack-certbot-renew.timer"
+	timerContent := `[Unit]
+Description=Daily WebStack Certbot Renewal Timer
+Requires=webstack-certbot-renew.service
+
+[Timer]
+OnCalendar=daily
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+OnBootSec=5min
+
+[Install]
+WantedBy=timers.target
+`
+
+	if err := ioutil.WriteFile(timerFile, []byte(timerContent), 0644); err != nil {
+		return fmt.Errorf("could not create timer file: %v", err)
+	}
+
+	// Reload systemd daemon
+	if err := runCommand("systemctl", "daemon-reload"); err != nil {
+		return fmt.Errorf("systemctl daemon-reload failed: %v", err)
+	}
+
+	// Enable and start timer
+	if err := runCommand("systemctl", "enable", "webstack-certbot-renew.timer"); err != nil {
+		return fmt.Errorf("could not enable timer: %v", err)
+	}
+
+	if err := runCommand("systemctl", "start", "webstack-certbot-renew.timer"); err != nil {
+		return fmt.Errorf("could not start timer: %v", err)
+	}
+
+	return nil
+}
+
+// disableSystemdTimer disables the systemd timer
+func disableSystemdTimer() error {
+	if err := runCommand("systemctl", "stop", "webstack-certbot-renew.timer"); err != nil {
+		return fmt.Errorf("could not stop timer: %v", err)
+	}
+
+	if err := runCommand("systemctl", "disable", "webstack-certbot-renew.timer"); err != nil {
+		return fmt.Errorf("could not disable timer: %v", err)
+	}
+
+	// Remove service and timer files
+	os.Remove("/etc/systemd/system/webstack-certbot-renew.service")
+	os.Remove("/etc/systemd/system/webstack-certbot-renew.timer")
+
+	// Reload systemd daemon
+	runCommand("systemctl", "daemon-reload")
+
+	return nil
+}
+
+// enableCronJob creates a cron job for automatic renewal
+func enableCronJob() error {
+	cronjob := `0 3,15 * * * /usr/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx || true; systemctl reload apache2 || true"` + "\n"
+
+	// Get current crontab
+	cmd := exec.Command("crontab", "-l")
+	output, _ := cmd.Output() // Ignore error if no crontab exists yet
+
+	// Check if job already exists
+	if strings.Contains(string(output), "certbot renew") {
+		return nil // Already exists
+	}
+
+	// Add new job
+	newCrontab := string(output) + cronjob
+	cmd = exec.Command("crontab", "-")
+	cmd.Stdin = strings.NewReader(newCrontab)
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("could not update crontab: %v", err)
+	}
+
+	return nil
+}
+
+// disableCronJob removes the cron job for automatic renewal
+func disableCronJob() error {
+	// Get current crontab
+	cmd := exec.Command("crontab", "-l")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("could not read crontab: %v", err)
+	}
+
+	// Remove certbot renewal line
+	lines := strings.Split(string(output), "\n")
+	var newLines []string
+	for _, line := range lines {
+		if !strings.Contains(line, "certbot renew") {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Update crontab
+	newCrontab := strings.Join(newLines, "\n")
+	cmd = exec.Command("crontab", "-")
+	cmd.Stdin = strings.NewReader(newCrontab)
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("could not update crontab: %v", err)
 	}
 
 	return nil

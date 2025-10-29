@@ -59,12 +59,27 @@ var sslStatusCmd = &cobra.Command{
 	},
 }
 
+var sslAutorenewCmd = &cobra.Command{
+	Use:   "autorenew [enable|disable|status|trigger]",
+	Short: "Manage automatic SSL certificate renewal",
+	Long:  `Enable, disable, check status, or manually trigger SSL certificate renewal using systemd timer or cron.`,
+	Args:  cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		action := "status"
+		if len(args) > 0 {
+			action = args[0]
+		}
+		ssl.ManageAutorenew(action)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(sslCmd)
 	sslCmd.AddCommand(sslEnableCmd)
 	sslCmd.AddCommand(sslDisableCmd)
 	sslCmd.AddCommand(sslRenewCmd)
 	sslCmd.AddCommand(sslStatusCmd)
+	sslCmd.AddCommand(sslAutorenewCmd)
 
 	// Flags for SSL enable
 	sslEnableCmd.Flags().StringP("email", "e", "", "Email address for Let's Encrypt registration")

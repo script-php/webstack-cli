@@ -1,5 +1,7 @@
 #!/bin/bash
-# WebStack CLI - One-liner Installation Script
+# WebStack - Complete System Installation Script
+# Installs WebStack CLI with all system integration
+# Foundation for CLI, service management, and future web control panel
 # Usage: curl -fsSL https://your-domain.com/install.sh | sudo bash
 
 set -e
@@ -8,6 +10,11 @@ set -e
 REPO_URL="https://github.com/script-php/webstack-cli"
 BINARY_NAME="webstack"
 INSTALL_DIR="/usr/local/bin"
+SERVICE_DIR="/etc/systemd/system"
+CONFIG_DIR="/etc/webstack"
+LOG_DIR="/var/log/webstack"
+WEB_ROOT="/var/www"
+SHARE_DIR="/usr/local/share/webstack"
 VERSION="latest"
 
 # Colors for output
@@ -111,17 +118,32 @@ install_dependencies() {
 
 # Create initial directory structure
 setup_directories() {
-    log "Setting up directories..."
+    log "Setting up system directories..."
     
-    mkdir -p /etc/webstack
-    mkdir -p /var/www
-    mkdir -p /var/log/webstack
-    mkdir -p /etc/nginx/sites-enabled
-    mkdir -p /etc/apache2/sites-enabled
+    # Create all required directories
+    mkdir -p "$CONFIG_DIR"
+    mkdir -p "$LOG_DIR"
+    mkdir -p "$WEB_ROOT"
+    mkdir -p "$SHARE_DIR"
+    mkdir -p /etc/nginx/sites-{available,enabled}
+    mkdir -p /etc/apache2/sites-{available,enabled}
+    mkdir -p /var/cache/nginx/fastcgi
+    mkdir -p /etc/ssl/webstack
+    mkdir -p /var/log/letsencrypt
     
-    # Set permissions
-    chown -R www-data:www-data /var/www
-    chmod 755 /etc/webstack
+    # Set proper ownership and permissions
+    chown -R www-data:www-data "$WEB_ROOT"
+    chmod 755 "$CONFIG_DIR"
+    chmod 755 "$LOG_DIR"
+    chmod 755 "$SHARE_DIR"
+    chmod 755 /etc/ssl/webstack
+    
+    # Create initial log file
+    touch "$LOG_DIR/webstack.log"
+    chown root:root "$LOG_DIR/webstack.log"
+    chmod 644 "$LOG_DIR/webstack.log"
+    
+    log "✓ Directories created with proper permissions"
 }
 
 # Ask if user wants to install as service
@@ -138,28 +160,33 @@ ask_service_install() {
 
 # Install systemd service (optional)
 install_service() {
-    log "Installing WebStack CLI as system service..."
+    log "Installing WebStack as system service..."
     
     # Create service file
-    cat > /etc/systemd/system/webstack.service << EOF
+    cat > "$SERVICE_DIR/webstack.service" << 'EOF'
 [Unit]
-Description=WebStack CLI Management Service
+Description=WebStack System Service
+Documentation=https://github.com/script-php/webstack-cli
 After=network.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/true
-ExecReload=${INSTALL_DIR}/${BINARY_NAME} reload
+ExecReload=/usr/local/bin/webstack reload --quiet
+ExecStop=/bin/true
 User=root
 Group=root
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     # Create logrotate configuration
-    cat > /etc/logrotate.d/webstack << EOF
+    cat > /etc/logrotate.d/webstack << 'EOF'
 /var/log/webstack/*.log {
     daily
     missingok
@@ -168,6 +195,9 @@ EOF
     delaycompress
     notifempty
     create 644 root root
+    postrotate
+        systemctl reload webstack.service >/dev/null 2>&1 || true
+    endscript
 }
 EOF
 
@@ -175,40 +205,66 @@ EOF
     systemctl daemon-reload
     systemctl enable webstack.service
     
-    log "WebStack service installed and enabled"
-    log "Use 'systemctl status webstack' to check service status"
+    log "✓ WebStack service installed and enabled"
+}
+
+# Install logrotate configuration for Certbot logs
+install_logrotate_letsencrypt() {
+    log "Setting up log rotation for SSL certificates..."
+    
+    cat > /etc/logrotate.d/letsencrypt << 'EOF'
+/var/log/letsencrypt/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 644 root root
+}
+EOF
+
+    log "✓ Log rotation configured"
 }
 
 # Main installation function
 main() {
-    info "WebStack CLI Installation Script"
-    info "================================"
+    info "WebStack System Installation"
+    info "============================"
     
     check_root
     install_dependencies
     setup_directories
     install_binary
+    install_logrotate_letsencrypt
     
     # Ask about service installation
     ask_service_install
     
     log "Installation completed successfully!"
     log ""
-    log "Quick Start:"
-    log "  sudo webstack install all              # Install complete web stack"
-    log "  sudo webstack domain add example.com   # Add a domain"
-    log "  sudo webstack ssl enable example.com   # Enable SSL"
+    log "Next Steps:"
+    log "  1. sudo webstack install all              # Install web stack components"
+    log "  2. sudo webstack domain add example.com   # Add your first domain"
+    log "  3. sudo webstack ssl enable example.com   # Enable SSL with auto-renewal"
     log ""
-    log "More Information:"
-    log "  webstack --help                        # Show all commands"
-    log "  webstack version                       # Show version info"
+    log "Management Commands:"
+    log "  webstack --help                           # Show all available commands"
+    log "  webstack version                          # Display version information"
+    log "  webstack ssl autorenew status             # Check SSL renewal status"
     log ""
-    log "Management:"
+    log "System Service:"
     if systemctl is-enabled webstack.service >/dev/null 2>&1; then
-        log "  systemctl status webstack              # Check service status"
-        log "  systemctl reload webstack              # Reload configurations"
+        log "  systemctl status webstack                 # Check service status"
+        log "  systemctl reload webstack                 # Reload configurations"
     fi
-    log "  webstack update                        # Update to latest version"
+    log ""
+    log "Logs:"
+    log "  tail -f $LOG_DIR/webstack.log             # View WebStack logs"
+    log "  journalctl -u webstack -f                 # View systemd logs"
+    log ""
+    log "Documentation:"
+    log "  https://github.com/script-php/webstack-cli"
 }
 
 # Run main function
