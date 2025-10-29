@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"text/template"
+	"webstack-cli/internal/config"
 	"webstack-cli/internal/templates"
 )
 
@@ -31,31 +33,31 @@ type Component struct {
 var components = map[string]Component{
 	"nginx": {
 		Name:        "Nginx",
-		CheckCmd:    []string{"systemctl", "is-active", "nginx"},
+		CheckCmd:    []string{"dpkg", "-l", "nginx"},
 		PackageName: "nginx",
 		ServiceName: "nginx",
 	},
 	"apache": {
 		Name:        "Apache",
-		CheckCmd:    []string{"systemctl", "is-active", "apache2"},
+		CheckCmd:    []string{"dpkg", "-l", "apache2"},
 		PackageName: "apache2",
 		ServiceName: "apache2",
 	},
 	"mysql": {
 		Name:        "MySQL",
-		CheckCmd:    []string{"systemctl", "is-active", "mysql"},
+		CheckCmd:    []string{"dpkg", "-l", "mysql-server"},
 		PackageName: "mysql-server",
 		ServiceName: "mysql",
 	},
 	"mariadb": {
 		Name:        "MariaDB",
-		CheckCmd:    []string{"systemctl", "is-active", "mariadb"},
+		CheckCmd:    []string{"dpkg", "-l", "mariadb-server"},
 		PackageName: "mariadb-server",
 		ServiceName: "mariadb",
 	},
 	"postgresql": {
 		Name:        "PostgreSQL",
-		CheckCmd:    []string{"systemctl", "is-active", "postgresql"},
+		CheckCmd:    []string{"dpkg", "-l", "postgresql"},
 		PackageName: "postgresql postgresql-contrib",
 		ServiceName: "postgresql",
 	},
@@ -85,8 +87,8 @@ func checkComponentStatus(component Component) ComponentStatus {
 
 // checkPHPVersion checks if a specific PHP version is installed
 func checkPHPVersion(version string) ComponentStatus {
-	serviceName := fmt.Sprintf("php%s-fpm", version)
-	cmd := exec.Command("systemctl", "is-active", serviceName)
+	packageName := fmt.Sprintf("php%s-fpm", version)
+	cmd := exec.Command("dpkg", "-l", packageName)
 	err := cmd.Run()
 	if err != nil {
 		return NotInstalled
@@ -259,6 +261,7 @@ func InstallNginx() {
 			if err := uninstallComponent(component); err != nil {
 				fmt.Printf("Error uninstalling Nginx: %v\n", err)
 			}
+			UpdateServerConfig("nginx", false, 0, "")
 			fmt.Println("✅ Nginx uninstalled")
 			return
 		case "reinstall":
@@ -280,7 +283,44 @@ func InstallNginx() {
 		return
 	}
 
-	// Configure Nginx to listen on port 80
+	// Determine Nginx mode based on whether Apache is installed
+	mode, port := determineNginxMode()
+
+	// If Nginx is in proxy mode, we need to move Apache to port 8080
+	if mode == "proxy" && isPackageInstalled("apache2") {
+		fmt.Println("🔄 Apache detected - configuring for backend mode...")
+		// Stop Apache first
+		runCommand("systemctl", "stop", "apache2")
+		
+		// Regenerate Apache config for port 8080
+		apachePort := 8080
+		portConfContent := fmt.Sprintf(`# WebStack CLI - Apache Ports Configuration
+# Apache listens on port %d
+
+Listen %d
+
+<IfModule ssl_module>
+    Listen %d ssl
+</IfModule>
+
+<IfModule mod_gnutls.c>
+    Listen %d ssl
+</IfModule>
+`, apachePort, apachePort, apachePort+363, apachePort+363)
+
+		if err := ioutil.WriteFile("/etc/apache2/ports.conf", []byte(portConfContent), 0644); err != nil {
+			fmt.Printf("⚠️  Warning: Could not update Apache ports.conf: %v\n", err)
+		} else {
+			fmt.Printf("✅ Apache reconfigured for port %d (backend mode)\n", apachePort)
+		}
+		
+		// Update Apache config
+		if err := UpdateServerConfig("apache", true, 8080, "backend"); err != nil {
+			fmt.Printf("⚠️  Warning: Could not update Apache config: %v\n", err)
+		}
+	}
+
+	// Configure Nginx
 	configureNginx()
 
 	if err := runCommand("systemctl", "enable", "nginx"); err != nil {
@@ -291,10 +331,24 @@ func InstallNginx() {
 		fmt.Printf("Error starting Nginx: %v\n", err)
 	}
 
-	fmt.Println("✅ Nginx installed successfully on port 80")
+	// If Apache was moved to backend, restart it
+	if mode == "proxy" && isPackageInstalled("apache2") {
+		if err := runCommand("systemctl", "start", "apache2"); err != nil {
+			fmt.Printf("⚠️  Warning: Could not restart Apache: %v\n", err)
+		} else {
+			fmt.Println("✅ Apache restarted on port 8080")
+		}
+	}
+
+	// Update config with Nginx installation details
+	if err := UpdateServerConfig("nginx", true, port, mode); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
+	}
+
+	fmt.Printf("✅ Nginx installed successfully on port %d (mode: %s)\n", port, mode)
 }
 
-// InstallApache installs and configures Apache on port 8080
+// InstallApache installs and configures Apache
 func InstallApache() {
 	fmt.Println("📦 Installing Apache...")
 
@@ -315,6 +369,7 @@ func InstallApache() {
 			if err := uninstallComponent(component); err != nil {
 				fmt.Printf("Error uninstalling Apache: %v\n", err)
 			}
+			UpdateServerConfig("apache", false, 0, "")
 			fmt.Println("✅ Apache uninstalled")
 			return
 		case "reinstall":
@@ -331,15 +386,43 @@ func InstallApache() {
 		return
 	}
 
-	// Configure Apache to listen on port 8080
+	// Determine Apache port and mode based on whether Nginx is installed
+	port, mode := determineApachePort()
+
+	// Configure Apache
 	configureApache()
 
-	// Stop and disable Apache by default to avoid conflicts with Nginx
-	runCommand("systemctl", "stop", "apache2")
-	runCommand("systemctl", "disable", "apache2")
+	// If Nginx is installed (Apache is backend), need to update Nginx to proxy mode
+	if mode == "backend" && isPackageInstalled("nginx") {
+		fmt.Println("🔄 Nginx detected - updating to proxy mode...")
+		// Update Nginx mode to proxy
+		if err := UpdateServerConfig("nginx", true, 80, "proxy"); err != nil {
+			fmt.Printf("⚠️  Warning: Could not update Nginx config: %v\n", err)
+		}
+		// Restart Nginx to activate proxy mode
+		if err := runCommand("systemctl", "restart", "nginx"); err != nil {
+			fmt.Printf("⚠️  Warning: Could not restart Nginx: %v\n", err)
+		}
+		// Apache is backend, enable and start it
+		runCommand("systemctl", "enable", "apache2")
+		runCommand("systemctl", "start", "apache2")
+		fmt.Println("✅ Nginx configured as proxy on port 80, Apache enabled on port 8080")
+	} else {
+		// Apache is standalone, enable and start it
+		runCommand("systemctl", "enable", "apache2")
+		runCommand("systemctl", "start", "apache2")
+	}
 
-	fmt.Println("✅ Apache installed successfully (disabled by default)")
-	fmt.Println("📝 To enable and start Apache, run: systemctl enable apache2 && systemctl start apache2")
+	// Update config with Apache installation details
+	if err := UpdateServerConfig("apache", true, port, mode); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
+	}
+
+	if mode == "backend" {
+		fmt.Printf("✅ Apache installed successfully on port %d (mode: backend)\n", port)
+	} else {
+		fmt.Printf("✅ Apache installed successfully on port %d (mode: standalone)\n", port)
+	}
 }
 
 // InstallMySQL installs MySQL server
@@ -752,6 +835,11 @@ func UninstallNginx() {
 		return
 	}
 
+	// Update config
+	if err := UpdateServerConfig("nginx", false, 0, ""); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
+	}
+
 	fmt.Println("✅ Nginx uninstalled successfully")
 }
 
@@ -773,6 +861,11 @@ func UninstallApache() {
 	if err := uninstallComponent(component); err != nil {
 		fmt.Printf("❌ Error uninstalling Apache: %v\n", err)
 		return
+	}
+
+	// Update config
+	if err := UpdateServerConfig("apache", false, 0, ""); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
 
 	fmt.Println("✅ Apache uninstalled successfully")
@@ -1033,16 +1126,28 @@ func configureApache() {
 	}
 	fmt.Println("✅ Apache modules enabled")
 
-	// Apply ports.conf from embedded templates
-	if data, err := templates.GetApacheTemplate("ports.conf"); err == nil {
-		// Write to system Apache ports.conf
-		if err := ioutil.WriteFile("/etc/apache2/ports.conf", data, 0644); err != nil {
-			fmt.Printf("⚠️  Warning: Could not write /etc/apache2/ports.conf: %v\n", err)
-		} else {
-			fmt.Println("✅ Updated /etc/apache2/ports.conf from template")
-		}
+	// Determine Apache port based on whether Nginx is installed
+	apachePort, apacheMode := determineApachePort()
+
+	// Generate ports.conf dynamically based on Apache port
+	portConfContent := fmt.Sprintf(`# WebStack CLI - Apache Ports Configuration
+# Apache listens on port %d
+
+Listen %d
+
+<IfModule ssl_module>
+    Listen %d ssl
+</IfModule>
+
+<IfModule mod_gnutls.c>
+    Listen %d ssl
+</IfModule>
+`, apachePort, apachePort, apachePort+363, apachePort+363)
+
+	if err := ioutil.WriteFile("/etc/apache2/ports.conf", []byte(portConfContent), 0644); err != nil {
+		fmt.Printf("⚠️  Warning: Could not write /etc/apache2/ports.conf: %v\n", err)
 	} else {
-		fmt.Printf("⚠️  Warning: Apache ports.conf template not found\n")
+		fmt.Printf("✅ Updated /etc/apache2/ports.conf (port %d, mode: %s)\n", apachePort, apacheMode)
 	}
 
 	// Optionally update apache2.conf if template exists
@@ -1051,6 +1156,40 @@ func configureApache() {
 			fmt.Printf("⚠️  Warning: Could not write /etc/apache2/apache2.conf: %v\n", err)
 		} else {
 			fmt.Println("✅ Updated /etc/apache2/apache2.conf from template")
+		}
+	}
+
+	// Ensure webstack welcome directory exists
+	if err := os.MkdirAll("/var/www/webstack", 0755); err != nil {
+		fmt.Printf("⚠️  Warning: Could not create webstack welcome directory: %v\n", err)
+	}
+
+	// Deploy welcome page to Apache webstack folder
+	if welcomeContent, err := templates.GetNginxTemplate("welcome.html"); err == nil {
+		if err := ioutil.WriteFile("/var/www/webstack/welcome.html", welcomeContent, 0644); err != nil {
+			fmt.Printf("⚠️  Warning: Could not write welcome page: %v\n", err)
+		} else {
+			fmt.Println("✅ Welcome page deployed")
+		}
+	}
+
+	// Deploy default Apache VirtualHost config with dynamic port
+	if defaultConfig, err := templates.GetApacheTemplate("default.conf"); err == nil {
+		// Parse and render the template with Apache port
+		tmpl, err := template.New("apache-default").Parse(string(defaultConfig))
+		if err == nil {
+			var buf strings.Builder
+			tmpl.Execute(&buf, map[string]interface{}{
+				"ApachePort": apachePort,
+			})
+			
+			if err := os.MkdirAll("/etc/apache2/sites-available", 0755); err == nil {
+				if err := ioutil.WriteFile("/etc/apache2/sites-available/001-default.conf", []byte(buf.String()), 0644); err == nil {
+					// Enable the default site
+					runCommandQuiet("a2ensite", "001-default.conf")
+					fmt.Println("✅ Default VirtualHost deployed")
+				}
+			}
 		}
 	}
 }
@@ -1083,4 +1222,64 @@ func configurePhpMyAdmin() {
 func configurePhpPgAdmin() {
 	// TODO: Configure phpPgAdmin access
 	fmt.Println("⚙️  Configuring phpPgAdmin...")
+}
+
+// isPackageInstalled checks if a package is installed on the system
+func isPackageInstalled(packageName string) bool {
+	cmd := exec.Command("dpkg", "-l", packageName)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	// Check if output contains "ii" (installed) status
+	return strings.Contains(string(output), "ii  "+packageName)
+}
+
+// determineApachePort checks if Nginx is installed and assigns appropriate port
+func determineApachePort() (int, string) {
+	if isPackageInstalled("nginx") {
+		// Nginx is installed, so Apache becomes backend on port 8080
+		return 8080, "backend"
+	}
+	// Nginx not installed, Apache runs standalone on port 80
+	return 80, "standalone"
+}
+
+// determineNginxMode checks if Apache is installed and determines Nginx mode
+func determineNginxMode() (string, int) {
+	if isPackageInstalled("apache2") {
+		// Apache is installed, Nginx becomes proxy on port 80
+		return "proxy", 80
+	}
+	// Apache not installed, Nginx runs direct on port 80
+	return "standalone", 80
+}
+
+// LoadOrCreateConfig loads config from file, or creates new one if missing
+func LoadOrCreateConfig() (*config.Config, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	return cfg, nil
+}
+
+// UpdateServerConfig updates a server's configuration in the config file
+func UpdateServerConfig(serverName string, installed bool, port int, mode string) error {
+	cfg, err := LoadOrCreateConfig()
+	if err != nil {
+		return err
+	}
+
+	srv := config.ServerConfig{
+		Installed: installed,
+		Port:      port,
+		Mode:      mode,
+	}
+	cfg.SetServer(serverName, srv)
+
+	return cfg.Save()
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"webstack-cli/internal/config"
 	"webstack-cli/internal/templates"
 )
 
@@ -437,12 +438,22 @@ func GenerateConfig(d Domain) error {
 func generateConfig(domain Domain) error {
 	fmt.Printf("⚙️  Generating configuration for %s...\n", domain.Name)
 
+	// Load server config to determine ports and modes
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("could not load server config: %v", err)
+	}
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+
 	// Get template variables
 	templateVars := map[string]interface{}{
 		"Domain":       domain.Name,
 		"DocumentRoot": domain.DocumentRoot,
 		"PHPVersion":   strings.Split(domain.PHPVersion, ".")[0] + domain.PHPVersion[strings.LastIndex(domain.PHPVersion, "."):],
 		"PHPSocket":    fmt.Sprintf("unix:/run/php/php%s-fpm.sock", domain.PHPVersion),
+		"ApachePort":   cfg.GetPort("apache"), // Get Apache port from config
 	}
 
 	// If SSL is enabled for this domain, try to include certificate paths and use SSL templates
@@ -469,28 +480,48 @@ func generateConfig(domain Domain) error {
 				return err
 			}
 		} else if domain.Backend == "apache" {
-			// For Apache backend, nginx handles SSL (proxy-ssl) and Apache stays same
-			if err := generateNginxConfig(domain.Name, templateVars, "proxy-ssl"); err != nil {
-				return err
-			}
-			if err := generateApacheConfig(domain.Name, templateVars); err != nil {
-				return err
+			// For Apache backend, check if Nginx is in proxy mode
+			nginxMode := cfg.GetMode("nginx")
+			if nginxMode == "proxy" {
+				// Nginx will proxy to Apache (proxy-ssl)
+				if err := generateNginxConfig(domain.Name, templateVars, "proxy-ssl"); err != nil {
+					return err
+				}
+				// Still need to generate Apache config for Nginx to proxy to
+				if err := generateApacheConfig(domain.Name, templateVars); err != nil {
+					return err
+				}
+			} else if !cfg.IsInstalled("nginx") || nginxMode == "standalone" {
+				// Generate Apache config for standalone mode
+				if err := generateApacheConfig(domain.Name, templateVars); err != nil {
+					return err
+				}
 			}
 		}
 	} else {
-		// Non-SSL paths (existing behavior)
+		// Non-SSL paths
 		if domain.Backend == "nginx" {
-			// For Nginx backend, use the direct PHP-FPM template
+			// Direct Nginx backend
 			if err := generateNginxConfig(domain.Name, templateVars, "domain"); err != nil {
 				return err
 			}
 		} else if domain.Backend == "apache" {
-			// For Apache backend, create Nginx proxy config AND Apache config
-			if err := generateNginxConfig(domain.Name, templateVars, "proxy"); err != nil {
-				return err
-			}
-			if err := generateApacheConfig(domain.Name, templateVars); err != nil {
-				return err
+			// For Apache backend, check server configuration
+			nginxMode := cfg.GetMode("nginx")
+			if nginxMode == "proxy" {
+				// Nginx is in proxy mode, generate proxy config
+				if err := generateNginxConfig(domain.Name, templateVars, "proxy"); err != nil {
+					return err
+				}
+				// Still need to generate Apache config for Nginx to proxy to
+				if err := generateApacheConfig(domain.Name, templateVars); err != nil {
+					return err
+				}
+			} else if !cfg.IsInstalled("nginx") || nginxMode == "standalone" {
+				// Generate Apache config for standalone mode
+				if err := generateApacheConfig(domain.Name, templateVars); err != nil {
+					return err
+				}
 			}
 		}
 	}
