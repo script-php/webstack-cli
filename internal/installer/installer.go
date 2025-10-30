@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/exec"
 	"strings"
 	"text/template"
+	"time"
 	"webstack-cli/internal/config"
 	"webstack-cli/internal/templates"
 )
@@ -60,12 +62,6 @@ var components = map[string]Component{
 		CheckCmd:    []string{"dpkg", "-l", "postgresql"},
 		PackageName: "postgresql postgresql-contrib",
 		ServiceName: "postgresql",
-	},
-	"phpmyadmin": {
-		Name:        "phpMyAdmin",
-		CheckCmd:    []string{"dpkg", "-l", "phpmyadmin"},
-		PackageName: "phpmyadmin",
-		ServiceName: "",
 	},
 	"phppgadmin": {
 		Name:        "phpPgAdmin",
@@ -177,8 +173,12 @@ func uninstallComponent(component Component) error {
 		runCommand("systemctl", "disable", component.ServiceName)
 	}
 
-	// Remove package
-	return runCommand("apt", "remove", "-y", component.PackageName)
+	// Remove package with non-interactive mode
+	cmd := exec.Command("apt", "remove", "-y", component.PackageName)
+	cmd.Env = append(os.Environ(),
+		"DEBIAN_FRONTEND=noninteractive",
+		"DEBCONF_NONINTERACTIVE_SEEN=true")
+	return cmd.Run()
 }
 
 // uninstallPHP removes a specific PHP version
@@ -219,14 +219,8 @@ func InstallAll() {
 	fmt.Println("\n📋 Database installation...")
 	if improvedAskYesNo("Do you want to install MySQL?") {
 		InstallMySQL()
-		if improvedAskYesNo("Do you want to install phpMyAdmin?") {
-			InstallPhpMyAdmin()
-		}
 	} else if improvedAskYesNo("Do you want to install MariaDB?") {
 		InstallMariaDB()
-		if improvedAskYesNo("Do you want to install phpMyAdmin?") {
-			InstallPhpMyAdmin()
-		}
 	}
 
 	// Ask about PostgreSQL
@@ -454,6 +448,21 @@ func InstallApache() {
 func InstallMySQL() {
 	fmt.Println("📦 Installing MySQL...")
 
+	// Check if MariaDB is already installed (conflict)
+	if isPackageInstalled("mariadb-server") {
+		fmt.Println("⚠️  MariaDB is already installed")
+		fmt.Println("   MySQL and MariaDB cannot run simultaneously (port/socket conflict)")
+		if improvedAskYesNo("Do you want to uninstall MariaDB first?") {
+			if err := uninstallComponent(components["mariadb"]); err != nil {
+				fmt.Printf("Error uninstalling MariaDB: %v\n", err)
+				return
+			}
+		} else {
+			fmt.Println("⏭️  Skipping MySQL installation")
+			return
+		}
+	}
+
 	// Check if already installed
 	component := components["mysql"]
 	status := checkComponentStatus(component)
@@ -482,12 +491,33 @@ func InstallMySQL() {
 		}
 	}
 
-	if err := runCommand("apt", "install", "-y", "mysql-server"); err != nil {
+	if err := runCommand("apt", "update"); err != nil {
+		fmt.Printf("Error updating package list: %v\n", err)
+		return
+	}
+
+	// Install MySQL with non-interactive mode to avoid debconf prompts
+	cmd := exec.Command("apt", "install", "-y", "mysql-server")
+	cmd.Env = append(os.Environ(),
+		"DEBIAN_FRONTEND=noninteractive",
+		"DEBCONF_NONINTERACTIVE_SEEN=true")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		fmt.Printf("Error installing MySQL: %v\n", err)
 		return
 	}
 
 	configureMySQL()
+
+	// Secure root user only if config succeeded and service is running
+	if isServiceActive("mysql") {
+		secureRootUser("mysql")
+	} else {
+		fmt.Println("⚠️  MySQL service is not running. Skipping password setup.")
+		fmt.Println("   Please verify configuration and restart MySQL manually.")
+		fmt.Println("   Then run: sudo mysql -u root -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY 'your-password';\"")
+	}
 
 	if err := runCommand("systemctl", "enable", "mysql"); err != nil {
 		fmt.Printf("Error enabling MySQL: %v\n", err)
@@ -499,6 +529,21 @@ func InstallMySQL() {
 // InstallMariaDB installs MariaDB server
 func InstallMariaDB() {
 	fmt.Println("📦 Installing MariaDB...")
+
+	// Check if MySQL is already installed (conflict)
+	if isPackageInstalled("mysql-server") {
+		fmt.Println("⚠️  MySQL is already installed")
+		fmt.Println("   MariaDB and MySQL cannot run simultaneously (port/socket conflict)")
+		if improvedAskYesNo("Do you want to uninstall MySQL first?") {
+			if err := uninstallComponent(components["mysql"]); err != nil {
+				fmt.Printf("Error uninstalling MySQL: %v\n", err)
+				return
+			}
+		} else {
+			fmt.Println("⏭️  Skipping MariaDB installation")
+			return
+		}
+	}
 
 	// Check if already installed
 	component := components["mariadb"]
@@ -528,12 +573,28 @@ func InstallMariaDB() {
 		}
 	}
 
-	if err := runCommand("apt", "install", "-y", "mariadb-server"); err != nil {
+	// Install MariaDB with non-interactive mode to avoid debconf prompts
+	cmd := exec.Command("apt", "install", "-y", "mariadb-server")
+	cmd.Env = append(os.Environ(),
+		"DEBIAN_FRONTEND=noninteractive",
+		"DEBCONF_NONINTERACTIVE_SEEN=true")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		fmt.Printf("Error installing MariaDB: %v\n", err)
 		return
 	}
 
 	configureMariaDB()
+
+	// Secure root user only if config succeeded and service is running
+	if isServiceActive("mariadb") {
+		secureRootUser("mariadb")
+	} else {
+		fmt.Println("⚠️  MariaDB service is not running. Skipping password setup.")
+		fmt.Println("   Please verify configuration and restart MariaDB manually.")
+		fmt.Println("   Then run: sudo mysql -u root -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY 'your-password';\"")
+	}
 
 	if err := runCommand("systemctl", "enable", "mariadb"); err != nil {
 		fmt.Printf("Error enabling MariaDB: %v\n", err)
@@ -668,79 +729,6 @@ func InstallPHP(version string) {
 	fmt.Printf("✅ PHP %s installed successfully\n", version)
 }
 
-// InstallPhpMyAdmin installs phpMyAdmin
-func InstallPhpMyAdmin() {
-	fmt.Println("📦 Installing phpMyAdmin...")
-
-	// Check if already installed
-	component := components["phpmyadmin"]
-	status := checkComponentStatus(component)
-
-	if status == Installed {
-		action := promptForAction(component.Name)
-		switch action {
-		case "keep":
-			fmt.Println("✅ Keeping existing phpMyAdmin installation")
-			return
-		case "skip":
-			fmt.Println("⏭️  Skipping phpMyAdmin installation")
-			return
-		case "uninstall":
-			if err := uninstallComponent(component); err != nil {
-				fmt.Printf("Error uninstalling phpMyAdmin: %v\n", err)
-			}
-			fmt.Println("✅ phpMyAdmin uninstalled")
-			return
-		case "reinstall":
-			fmt.Println("🔄 Reinstalling phpMyAdmin...")
-			if err := uninstallComponent(component); err != nil {
-				fmt.Printf("Error uninstalling phpMyAdmin: %v\n", err)
-				return
-			}
-		}
-	}
-
-	fmt.Println("⚠️  phpMyAdmin installation requires configuration...")
-	fmt.Println("📝 Please follow these steps during installation:")
-	fmt.Println("   1. Select 'apache2' when prompted for web server")
-	fmt.Println("   2. Choose 'Yes' to configure database")
-	fmt.Println("   3. Enter a secure password for phpMyAdmin")
-	fmt.Println("")
-	fmt.Print("Press Enter to continue...")
-	reader := bufio.NewReader(os.Stdin)
-	reader.ReadString('\n')
-
-	// Set environment variables for non-interactive mode
-	cmd := exec.Command("apt", "install", "-y", "phpmyadmin")
-	cmd.Env = append(os.Environ(),
-		"DEBIAN_FRONTEND=noninteractive",
-		"DEBCONF_NONINTERACTIVE_SEEN=true")
-
-	// Pre-seed the configuration to avoid interactive prompts
-	preseedCommands := [][]string{
-		{"debconf-set-selections", "phpmyadmin phpmyadmin/dbconfig-install boolean true"},
-		{"debconf-set-selections", "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2"},
-		{"debconf-set-selections", "phpmyadmin phpmyadmin/app-password-confirm password"},
-		{"debconf-set-selections", "phpmyadmin phpmyadmin/password-confirm password"},
-	}
-
-	for _, preseedCmd := range preseedCommands {
-		if err := runCommandQuiet(preseedCmd[0], preseedCmd[1:]...); err != nil {
-			fmt.Printf("Warning: Failed to preseed configuration: %v\n", err)
-		}
-	}
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error installing phpMyAdmin: %v\n", err)
-		return
-	}
-
-	configurePhpMyAdmin()
-	fmt.Println("✅ phpMyAdmin installed and configured at /phpmyadmin")
-}
-
 // InstallPhpPgAdmin installs phpPgAdmin
 func InstallPhpPgAdmin() {
 	fmt.Println("📦 Installing phpPgAdmin...")
@@ -829,9 +817,6 @@ func UninstallAll() {
 	}
 
 	// Uninstall web interfaces
-	if improvedAskYesNo("Uninstall phpMyAdmin?") {
-		UninstallPhpMyAdmin()
-	}
 	if improvedAskYesNo("Uninstall phpPgAdmin?") {
 		UninstallPhpPgAdmin()
 	}
@@ -988,32 +973,6 @@ func UninstallPHP(version string) {
 	}
 
 	fmt.Printf("✅ PHP %s uninstalled successfully\n", version)
-}
-
-// UninstallPhpMyAdmin removes phpMyAdmin
-func UninstallPhpMyAdmin() {
-	component := components["phpmyadmin"]
-
-	// Check if installed by looking for the package
-	cmd := exec.Command(component.CheckCmd[0], component.CheckCmd[1:]...)
-	err := cmd.Run()
-
-	if err != nil {
-		fmt.Println("ℹ️  phpMyAdmin is not installed")
-		return
-	}
-
-	if !improvedAskYesNo("Uninstall phpMyAdmin?") {
-		fmt.Println("⏭️  Skipping phpMyAdmin uninstall")
-		return
-	}
-
-	if err := uninstallComponent(component); err != nil {
-		fmt.Printf("❌ Error uninstalling phpMyAdmin: %v\n", err)
-		return
-	}
-
-	fmt.Println("✅ phpMyAdmin uninstalled successfully")
 }
 
 // UninstallPhpPgAdmin removes phpPgAdmin
@@ -1219,14 +1178,108 @@ Listen %d
 	}
 }
 
-func configureMySQL() {
-	// TODO: Apply MySQL configuration from templates
+func configureMySQL() bool {
 	fmt.Println("⚙️  Configuring MySQL...")
+
+	// Read MySQL configuration template from embedded filesystem
+	configData, err := templates.GetMySQLTemplate("my.cnf")
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Could not read MySQL config template: %v\n", err)
+		fmt.Println("   Using system defaults")
+		return false
+	}
+
+	// Write configuration to MySQL config directory
+	destPath := "/etc/mysql/mysql.conf.d/99-webstack.cnf"
+	if err := ioutil.WriteFile(destPath, configData, 0644); err != nil {
+		fmt.Printf("⚠️  Warning: Could not write MySQL config: %v\n", err)
+		return false
+	}
+
+	fmt.Printf("✓ MySQL configuration written to %s\n", destPath)
+
+	// Create required MySQL directories and set permissions
+	requiredDirs := []struct {
+		path string
+		mode os.FileMode
+		user string
+	}{
+		{"/var/log/mysql", 0755, "mysql"},
+		{"/var/lib/mysql-files", 0770, "mysql"},
+	}
+
+	for _, dir := range requiredDirs {
+		if err := os.MkdirAll(dir.path, dir.mode); err != nil {
+			fmt.Printf("⚠️  Warning: Could not create %s: %v\n", dir.path, err)
+			return false
+		} else {
+			// Change ownership to mysql user
+			runCommandQuiet("chown", "mysql:mysql", dir.path)
+			runCommandQuiet("chmod", fmt.Sprintf("%o", dir.mode), dir.path)
+		}
+	}
+
+	// Restart MySQL to apply configuration
+	if err := runCommand("systemctl", "restart", "mysql"); err != nil {
+		fmt.Printf("⚠️  Warning: Could not restart MySQL: %v\n", err)
+		fmt.Println("   Run 'sudo systemctl restart mysql' manually to apply configuration")
+		return false
+	}
+
+	fmt.Println("✓ MySQL restarted with new configuration")
+	return true
 }
 
-func configureMariaDB() {
-	// TODO: Apply MariaDB configuration from templates
+func configureMariaDB() bool {
 	fmt.Println("⚙️  Configuring MariaDB...")
+
+	// Read MySQL configuration template from embedded filesystem (works for MariaDB too)
+	configData, err := templates.GetMySQLTemplate("my.cnf")
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Could not read MariaDB config template: %v\n", err)
+		fmt.Println("   Using system defaults")
+		return false
+	}
+
+	// Write configuration to MariaDB config directory
+	destPath := "/etc/mysql/mariadb.conf.d/99-webstack.cnf"
+	if err := ioutil.WriteFile(destPath, configData, 0644); err != nil {
+		fmt.Printf("⚠️  Warning: Could not write MariaDB config: %v\n", err)
+		return false
+	}
+
+	fmt.Printf("✓ MariaDB configuration written to %s\n", destPath)
+
+	// Create required MariaDB directories and set permissions
+	requiredDirs := []struct {
+		path string
+		mode os.FileMode
+		user string
+	}{
+		{"/var/log/mysql", 0755, "mysql"},
+		{"/var/lib/mysql-files", 0770, "mysql"},
+	}
+
+	for _, dir := range requiredDirs {
+		if err := os.MkdirAll(dir.path, dir.mode); err != nil {
+			fmt.Printf("⚠️  Warning: Could not create %s: %v\n", dir.path, err)
+			return false
+		} else {
+			// Change ownership to mysql user
+			runCommandQuiet("chown", "mysql:mysql", dir.path)
+			runCommandQuiet("chmod", fmt.Sprintf("%o", dir.mode), dir.path)
+		}
+	}
+
+	// Restart MariaDB to apply configuration
+	if err := runCommand("systemctl", "restart", "mariadb"); err != nil {
+		fmt.Printf("⚠️  Warning: Could not restart MariaDB: %v\n", err)
+		fmt.Println("   Run 'sudo systemctl restart mariadb' manually to apply configuration")
+		return false
+	}
+
+	fmt.Println("✓ MariaDB restarted with new configuration")
+	return true
 }
 
 func configurePostgreSQL() {
@@ -1239,13 +1292,166 @@ func configurePHP(version string) {
 	fmt.Printf("⚙️  Configuring PHP %s...\n", version)
 }
 
-func configurePhpMyAdmin() {
-	// TODO: Configure phpMyAdmin access
-	fmt.Println("⚙️  Configuring phpMyAdmin...")
+// isServiceActive checks if a systemd service is running
+func isServiceActive(serviceName string) bool {
+	cmd := exec.Command("systemctl", "is-active", serviceName)
+	err := cmd.Run()
+	return err == nil
 }
 
+// detectPhpFpmSocket detects the PHP-FPM socket path
+func detectPhpFpmSocket() string {
+	// Try common socket paths
+	sockets := []string{
+		"/run/php/php8.3-fpm.sock",
+		"/run/php/php8.2-fpm.sock",
+		"/run/php/php8.1-fpm.sock",
+		"/run/php/php8.0-fpm.sock",
+		"/run/php/php7.4-fpm.sock",
+		"/run/php/www.sock",
+	}
+
+	for _, socket := range sockets {
+		if _, err := os.Stat(socket); err == nil {
+			return socket
+		}
+	}
+
+	return ""
+}
+
+
+// generateRandomPassword generates a random password of specified length
+func generateRandomPassword(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	password := make([]byte, length)
+	rand.Seed(time.Now().UnixNano())
+	for i := range password {
+		password[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(password)
+}
+
+
+// executeSQL executes SQL commands against MySQL/MariaDB
+func executeSQL(sqlCommands string) error {
+	// Try with mysql command line client as root user (no password, socket auth)
+	cmd := exec.Command("mysql", "-u", "root", "-e", sqlCommands)
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Log the output for debugging
+		fmt.Printf("Debug: MySQL execution output: %s\n", string(output))
+		return fmt.Errorf("failed to execute SQL: %v", err)
+	}
+	
+	return nil
+}
+
+// executeSQLAsRoot executes SQL commands as the mysql system user (for initial setup without password)
+func executeSQLAsRoot(sqlCommands string) error {
+	// Connect to MySQL as root user via Unix socket authentication
+	// We pipe the SQL to stdin to avoid shell escaping issues with passwords
+	cmd := exec.Command("mysql", "-u", "root")
+	cmd.Stdin = strings.NewReader(sqlCommands)
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("Debug: MySQL execution output: %s\n", string(output))
+		return fmt.Errorf("failed to execute SQL: %v", err)
+	}
+	
+	return nil
+}
+
+// secureRootUser sets a secure password for MySQL/MariaDB root user
+func secureRootUser(dbType string) {
+	fmt.Println("🔐 Securing database root user...")
+
+	// Ask user if they want to set a password or auto-generate one
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter password for root user (press Enter for auto-generated password): ")
+	
+	userInput, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error reading input: %v\n", err)
+		return
+	}
+
+	userInput = strings.TrimSpace(userInput)
+	var rootPassword string
+
+	if userInput == "" {
+		// Auto-generate password
+		rootPassword = generateRandomPassword(24)
+		fmt.Println("✓ Auto-generated password will be used")
+	} else {
+		rootPassword = userInput
+		fmt.Println("✓ Password set")
+	}
+
+	// SQL commands to set root password
+	sqlCommands := fmt.Sprintf(`
+ALTER USER 'root'@'localhost' IDENTIFIED BY '%s';
+FLUSH PRIVILEGES;
+`, rootPassword)
+
+	// Execute SQL with sudo for initial setup
+	if err := executeSQLAsRoot(sqlCommands); err != nil {
+		fmt.Printf("⚠️  Warning: Could not set root password: %v\n", err)
+		fmt.Println("   You can manually secure root with: sudo mysql -u root")
+		return
+	}
+
+	// Save credentials to secure file
+	os.MkdirAll("/etc/webstack", 0755)
+	credsPath := fmt.Sprintf("/etc/webstack/%s-root-credentials.txt", dbType)
+	creds := fmt.Sprintf(`%s Root User Credentials
+================================
+User: root
+Host: localhost
+Password: %s
+
+Location: /etc/webstack/%s-root-credentials.txt
+Permissions: 600 (readable by root only)
+
+How to use:
+  sudo mysql -u root -p
+  Then enter the password above
+
+Security Notes:
+- Keep this file secure on the server
+- Do not commit to version control
+- Rotate password regularly
+`, strings.ToUpper(dbType), rootPassword, dbType)
+
+	if err := ioutil.WriteFile(credsPath, []byte(creds), 0600); err != nil {
+		fmt.Printf("Warning: Could not save credentials file: %v\n", err)
+	} else {
+		fmt.Printf("✓ %s root credentials saved to %s (mode 600)\n", strings.ToUpper(dbType), credsPath)
+	}
+
+	// Also save password to config file for CLI access
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Printf("Warning: Could not load config: %v\n", err)
+		return
+	}
+
+	// Store password in config defaults
+	configKey := fmt.Sprintf("%s_root_password", dbType)
+	cfg.SetDefault(configKey, rootPassword)
+
+	if err := cfg.Save(); err != nil {
+		fmt.Printf("Warning: Could not save password to config: %v\n", err)
+	} else {
+		fmt.Printf("✓ Password saved to config at key '%s'\n", configKey)
+	}
+}
+
+// configurePhpPgAdmin configures phpPgAdmin after installation
 func configurePhpPgAdmin() {
-	// TODO: Configure phpPgAdmin access
+	// TODO: Apply phpPgAdmin configuration from templates
 	fmt.Println("⚙️  Configuring phpPgAdmin...")
 }
 

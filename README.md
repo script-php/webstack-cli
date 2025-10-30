@@ -9,7 +9,7 @@ A comprehensive command-line tool for managing a complete web development stack 
 - **PHP Versions**: Support for PHP-FPM versions 5.6 to 8.4
 - **Domain Management**: Add, edit, and delete domains with backend selection
 - **SSL Management**: Let's Encrypt SSL certificate management
-- **Web Interfaces**: Optional phpMyAdmin and phpPgAdmin installation
+- **Web Interfaces**: Optional phpPgAdmin for PostgreSQL management
 
 ## Installation
 
@@ -138,7 +138,6 @@ sudo webstack ssl status  # All domains
 ### Web Interfaces
 
 After installation:
-- **phpMyAdmin**: `http://your-server-ip/phpmyadmin`
 - **phpPgAdmin**: `http://your-server-ip/phppgadmin`
 
 ## Directory Structure

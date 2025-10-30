@@ -269,7 +269,7 @@ sudo systemctl restart nginx apache2
 
 ### Included but Not Configured
 - ⚠️ MySQL/MariaDB/PostgreSQL (installed but unconfigured)
-- ⚠️ phpMyAdmin/phpPgAdmin (available but not tuned)
+- ⚠️ phpPgAdmin (available but not tuned)
 - ⚠️ PHP-FPM (installed but pools not configured)
 
 ### Not Included (Manual Setup Needed)
