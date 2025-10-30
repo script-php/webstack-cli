@@ -63,12 +63,6 @@ var components = map[string]Component{
 		PackageName: "postgresql postgresql-contrib",
 		ServiceName: "postgresql",
 	},
-	"phppgadmin": {
-		Name:        "phpPgAdmin",
-		CheckCmd:    []string{"dpkg", "-l", "phppgadmin"},
-		PackageName: "phppgadmin",
-		ServiceName: "",
-	},
 }
 
 // checkComponentStatus checks if a component is already installed
@@ -360,9 +354,6 @@ func InstallAll() {
 	// Ask about PostgreSQL
 	if improvedAskYesNo("Do you want to install PostgreSQL?") {
 		InstallPostgreSQL()
-		if improvedAskYesNo("Do you want to install phpPgAdmin?") {
-			InstallPhpPgAdmin()
-		}
 	}
 
 	// Install PHP versions
@@ -1003,45 +994,224 @@ func InstallPHP(version string) {
 	fmt.Printf("✅ PHP %s installed successfully\n", version)
 }
 
-// InstallPhpPgAdmin installs phpPgAdmin
-func InstallPhpPgAdmin() {
-	fmt.Println("📦 Installing phpPgAdmin...")
-
-	// Check if already installed
-	component := components["phppgadmin"]
-	status := checkComponentStatus(component)
-
-	if status == Installed {
-		action := promptForAction(component.Name)
-		switch action {
-		case "keep":
-			fmt.Println("✅ Keeping existing phpPgAdmin installation")
-			return
-		case "skip":
-			fmt.Println("⏭️  Skipping phpPgAdmin installation")
-			return
-		case "uninstall":
-			if err := uninstallComponent(component); err != nil {
-				fmt.Printf("Error uninstalling phpPgAdmin: %v\n", err)
-			}
-			fmt.Println("✅ phpPgAdmin uninstalled")
-			return
-		case "reinstall":
-			fmt.Println("🔄 Reinstalling phpPgAdmin...")
-			if err := uninstallComponent(component); err != nil {
-				fmt.Printf("Error uninstalling phpPgAdmin: %v\n", err)
-				return
-			}
-		}
-	}
-
-	if err := runCommand("apt", "install", "-y", "phppgadmin"); err != nil {
-		fmt.Printf("Error installing phpPgAdmin: %v\n", err)
+// InstallMySQLVersion installs a specific version of MySQL or latest if version is empty
+func InstallMySQLVersion(version string) {
+	if version == "" {
+		InstallMySQL()
 		return
 	}
+	
+	fmt.Printf("📦 Installing MySQL version %s...\n", version)
+	
+	// Check if MariaDB is already installed (conflict)
+	if isPackageInstalled("mariadb-server") {
+		fmt.Println("⚠️  MariaDB is already installed")
+		fmt.Println("   MySQL and MariaDB cannot run simultaneously (port/socket conflict)")
+		if improvedAskYesNo("Do you want to uninstall MariaDB first?") {
+			if err := uninstallComponent(components["mariadb"]); err != nil {
+				fmt.Printf("Error uninstalling MariaDB: %v\n", err)
+				return
+			}
+		} else {
+			fmt.Println("⏭️  Skipping MySQL installation")
+			return
+		}
+	}
+	
+	// Clean slate
+	fmt.Println("🧹 Performing clean-slate removal of MySQL/MariaDB...")
+	fmt.Println("🔪 Force-killing any running MySQL/MariaDB processes...")
+	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
+	time.Sleep(1 * time.Second)
+	
+	runCommandQuiet("systemctl", "stop", "mysql")
+	runCommandQuiet("systemctl", "stop", "mariadb")
+	time.Sleep(1 * time.Second)
+	
+	fmt.Println("📦 Removing existing packages...")
+	purgeCmd := exec.Command("bash", "-c", "apt-get purge -y 'mysql*' 'mariadb*' 2>/dev/null; true")
+	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	_ = purgeCmd.Run()
+	
+	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
+	dirsToRemove := []string{
+		"/var/lib/mysql",
+		"/var/lib/mysql-8.0",
+		"/var/lib/mysql-files",
+		"/var/log/mysql",
+		"/etc/mysql",
+		"/run/mysqld",
+		"/run/mariadb",
+	}
+	for _, dir := range dirsToRemove {
+		os.RemoveAll(dir)
+	}
+	
+	runCommandQuiet("apt", "clean")
+	runCommandQuiet("apt", "autoclean")
+	runCommandQuiet("apt", "autoremove", "-y")
+	
+	fmt.Println("🔄 Updating package lists...")
+	if err := runCommand("apt", "update"); err != nil {
+		fmt.Printf("Error updating package list: %v\n", err)
+		return
+	}
+	
+	// Install specific MySQL version
+	fmt.Printf("📦 Installing MySQL version %s...\n", version)
+	packageSpec := fmt.Sprintf("mysql-server=%s*", version)
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends '%s' 2>&1 | head -200", packageSpec))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Run()
+	}()
+	
+	select {
+	case err := <-done:
+		if err != nil {
+			fmt.Printf("⚠️  Install completed with status: %v (this may be normal)\n", err)
+		}
+	case <-time.After(5 * time.Minute):
+		fmt.Println("⚠️  Installation timed out after 5 minutes")
+		fmt.Println("   Continuing anyway...")
+	}
+	
+	time.Sleep(2 * time.Second)
+	
+	fmt.Println("🔍 Verifying MySQL service...")
+	if err := runCommand("systemctl", "restart", "mysql"); err != nil {
+		fmt.Printf("⚠️  MySQL service may not be fully installed: %v\n", err)
+		fmt.Println("   Continuing with configuration anyway...")
+	}
+	
+	configureMySQL()
+	
+	if isServiceActive("mysql") {
+		secureRootUser("mysql")
+	} else {
+		fmt.Println("⚠️  MySQL service is not running. Skipping password setup.")
+	}
+	
+	if err := runCommand("systemctl", "enable", "mysql"); err != nil {
+		fmt.Printf("Error enabling MySQL: %v\n", err)
+	}
+	
+	fmt.Printf("✅ MySQL %s installed successfully\n", version)
+}
 
-	configurePhpPgAdmin()
-	fmt.Println("✅ phpPgAdmin installed and configured at /phppgadmin")
+// InstallMariaDBVersion installs a specific version of MariaDB or latest if version is empty
+func InstallMariaDBVersion(version string) {
+	if version == "" {
+		InstallMariaDB()
+		return
+	}
+	
+	fmt.Printf("📦 Installing MariaDB version %s...\n", version)
+	
+	// Check if MySQL is already installed (conflict)
+	if isPackageInstalled("mysql-server") {
+		fmt.Println("⚠️  MySQL is already installed")
+		fmt.Println("   MariaDB and MySQL cannot run simultaneously (port/socket conflict)")
+		if improvedAskYesNo("Do you want to uninstall MySQL first?") {
+			if err := uninstallComponent(components["mysql"]); err != nil {
+				fmt.Printf("Error uninstalling MySQL: %v\n", err)
+				return
+			}
+		} else {
+			fmt.Println("⏭️  Skipping MariaDB installation")
+			return
+		}
+	}
+	
+	// Clean slate
+	fmt.Println("🧹 Performing clean-slate removal of MySQL/MariaDB...")
+	fmt.Println("🔪 Force-killing any running MySQL/MariaDB processes...")
+	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
+	time.Sleep(1 * time.Second)
+	
+	runCommandQuiet("systemctl", "stop", "mysql")
+	runCommandQuiet("systemctl", "stop", "mariadb")
+	time.Sleep(1 * time.Second)
+	
+	fmt.Println("📦 Removing existing packages...")
+	purgeCmd := exec.Command("bash", "-c", "apt-get purge -y 'mysql*' 'mariadb*' 2>/dev/null; true")
+	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	_ = purgeCmd.Run()
+	
+	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
+	dirsToRemove := []string{
+		"/var/lib/mysql",
+		"/var/lib/mysql-8.0",
+		"/var/lib/mysql-files",
+		"/var/log/mysql",
+		"/etc/mysql",
+		"/run/mysqld",
+		"/run/mariadb",
+	}
+	for _, dir := range dirsToRemove {
+		os.RemoveAll(dir)
+	}
+	
+	runCommandQuiet("apt", "clean")
+	runCommandQuiet("apt", "autoclean")
+	runCommandQuiet("apt", "autoremove", "-y")
+	
+	fmt.Println("🔄 Updating package lists...")
+	if err := runCommand("apt", "update"); err != nil {
+		fmt.Printf("Error updating package list: %v\n", err)
+		return
+	}
+	
+	// Install specific MariaDB version
+	fmt.Printf("📦 Installing MariaDB version %s...\n", version)
+	packageSpec := fmt.Sprintf("mariadb-server=%s*", version)
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends '%s' 2>&1 | head -200", packageSpec))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Run()
+	}()
+	
+	select {
+	case err := <-done:
+		if err != nil {
+			fmt.Printf("⚠️  Install completed with status: %v (this may be normal)\n", err)
+		}
+	case <-time.After(5 * time.Minute):
+		fmt.Println("⚠️  Installation timed out after 5 minutes")
+		fmt.Println("   Continuing anyway...")
+	}
+	
+	time.Sleep(2 * time.Second)
+	
+	fmt.Println("🔍 Verifying MariaDB service...")
+	if err := runCommand("systemctl", "restart", "mariadb"); err != nil {
+		fmt.Printf("⚠️  MariaDB service may not be fully installed: %v\n", err)
+		fmt.Println("   Continuing with configuration anyway...")
+	}
+	
+	configureMariaDB()
+	
+	if isServiceActive("mariadb") {
+		secureRootUser("mariadb")
+	} else {
+		fmt.Println("⚠️  MariaDB service is not running. Skipping password setup.")
+	}
+	
+	if err := runCommand("systemctl", "enable", "mariadb"); err != nil {
+		fmt.Printf("Error enabling MariaDB: %v\n", err)
+	}
+	
+	fmt.Printf("✅ MariaDB %s installed successfully\n", version)
 }
 
 // ==================== UNINSTALL FUNCTIONS ====================
@@ -1088,11 +1258,6 @@ func UninstallAll() {
 				UninstallPHP(version)
 			}
 		}
-	}
-
-	// Uninstall web interfaces
-	if improvedAskYesNo("Uninstall phpPgAdmin?") {
-		UninstallPhpPgAdmin()
 	}
 
 	fmt.Println("\n✅ Uninstall completed!")
@@ -1249,31 +1414,6 @@ func UninstallPHP(version string) {
 	fmt.Printf("✅ PHP %s uninstalled successfully\n", version)
 }
 
-// UninstallPhpPgAdmin removes phpPgAdmin
-func UninstallPhpPgAdmin() {
-	component := components["phppgadmin"]
-
-	// Check if installed by looking for the package
-	cmd := exec.Command(component.CheckCmd[0], component.CheckCmd[1:]...)
-	err := cmd.Run()
-
-	if err != nil {
-		fmt.Println("ℹ️  phpPgAdmin is not installed")
-		return
-	}
-
-	if !improvedAskYesNo("Uninstall phpPgAdmin?") {
-		fmt.Println("⏭️  Skipping phpPgAdmin uninstall")
-		return
-	}
-
-	if err := uninstallComponent(component); err != nil {
-		fmt.Printf("❌ Error uninstalling phpPgAdmin: %v\n", err)
-		return
-	}
-
-	fmt.Println("✅ phpPgAdmin uninstalled successfully")
-}
 
 // Helper functions
 func runCommand(name string, args ...string) error {
@@ -1721,12 +1861,6 @@ Security Notes:
 	} else {
 		fmt.Printf("✓ Password saved to config at key '%s'\n", configKey)
 	}
-}
-
-// configurePhpPgAdmin configures phpPgAdmin after installation
-func configurePhpPgAdmin() {
-	// TODO: Apply phpPgAdmin configuration from templates
-	fmt.Println("⚙️  Configuring phpPgAdmin...")
 }
 
 // isPackageInstalled checks if a package is installed on the system

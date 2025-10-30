@@ -16,9 +16,12 @@ Features:
 - Install Nginx (port 80) and Apache (port 8080)
 - Install MariaDB/MySQL and PostgreSQL
 - Install PHP-FPM versions 5.6 to 8.4
-- Install phpPgAdmin for PostgreSQL management
 - Domain management with SSL support
 - Let's Encrypt SSL certificate management`,
+	// Disable completion command
+	CompletionOptions: cobra.CompletionOptions{
+		DisableDefaultCmd: true,
+	},
 }
 
 func Execute() {

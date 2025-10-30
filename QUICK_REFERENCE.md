@@ -269,7 +269,6 @@ sudo systemctl restart nginx apache2
 
 ### Included but Not Configured
 - ⚠️ MySQL/MariaDB/PostgreSQL (installed but unconfigured)
-- ⚠️ phpPgAdmin (available but not tuned)
 - ⚠️ PHP-FPM (installed but pools not configured)
 
 ### Not Included (Manual Setup Needed)
@@ -280,6 +279,8 @@ sudo systemctl restart nginx apache2
 - ❌ SSL certificate renewal automation
 
 ---
+
+```
 
 ## 🎯 NEXT PRIORITIES FOR DEVELOPMENT
 

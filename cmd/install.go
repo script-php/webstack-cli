@@ -38,18 +38,30 @@ var installApacheCmd = &cobra.Command{
 }
 
 var installMysqlCmd = &cobra.Command{
-	Use:   "mysql",
-	Short: "Install MySQL database server",
+	Use:   "mysql [version]",
+	Short: "Install MySQL database server with optional version",
+	Long:  `Install MySQL database server. Optionally specify version (e.g., 5.7, 8.0, 8.1). Default: latest available.`,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		installer.InstallMySQL()
+		version := ""
+		if len(args) > 0 {
+			version = args[0]
+		}
+		installer.InstallMySQLVersion(version)
 	},
 }
 
 var installMariadbCmd = &cobra.Command{
-	Use:   "mariadb",
-	Short: "Install MariaDB database server",
+	Use:   "mariadb [version]",
+	Short: "Install MariaDB database server with optional version",
+	Long:  `Install MariaDB database server. Optionally specify version (e.g., 10.5, 10.6, 11.0). Default: latest available.`,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		installer.InstallMariaDB()
+		version := ""
+		if len(args) > 0 {
+			version = args[0]
+		}
+		installer.InstallMariaDBVersion(version)
 	},
 }
 

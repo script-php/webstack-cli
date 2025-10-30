@@ -70,14 +70,6 @@ var uninstallPhpCmd = &cobra.Command{
 	},
 }
 
-var uninstallPhppgadminCmd = &cobra.Command{
-	Use:   "phppgadmin",
-	Short: "Uninstall phpPgAdmin web interface",
-	Run: func(cmd *cobra.Command, args []string) {
-		installer.UninstallPhpPgAdmin()
-	},
-}
-
 func init() {
 	rootCmd.AddCommand(uninstallCmd)
 	uninstallCmd.AddCommand(uninstallAllCmd)
@@ -87,5 +79,4 @@ func init() {
 	uninstallCmd.AddCommand(uninstallMariadbCmd)
 	uninstallCmd.AddCommand(uninstallPostgresqlCmd)
 	uninstallCmd.AddCommand(uninstallPhpCmd)
-	uninstallCmd.AddCommand(uninstallPhppgadminCmd)
 }
