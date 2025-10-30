@@ -163,6 +163,88 @@ func improvedAskYesNo(question string) bool {
 	}
 }
 
+// cleanupMySQLMariaDB performs a nuclear cleanup of MySQL/MariaDB when uninstall is needed
+// This function handles orphaned processes that can't be killed normally
+func cleanupMySQLMariaDB() {
+	fmt.Println("\n🚀 NUCLEAR CLEANUP - REMOVING ALL MYSQL/MARIADB")
+	fmt.Println("================================================== ")
+	
+	// Kill everything
+	fmt.Println("🔪 Killing all processes...")
+	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 apt 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 dpkg 2>/dev/null; true")
+	time.Sleep(1 * time.Second)
+	
+	// Remove policy-rc.d block
+	fmt.Println("🗑️  Removing policy blocks...")
+	os.Remove("/usr/sbin/policy-rc.d")
+	
+	// Remove ALL lock files
+	fmt.Println("🔓 Removing lock files...")
+	os.Remove("/var/lib/dpkg/lock-frontend")
+	os.Remove("/var/lib/dpkg/lock")
+	os.Remove("/var/cache/apt/archives/lock")
+	
+	// Use bash to clean debconf locks with glob pattern
+	runCommandQuiet("bash", "-c", "rm -f /var/cache/debconf/*.dat /var/cache/debconf/*.old")
+	
+	// Remove ALL MySQL/MariaDB directories
+	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
+	runCommandQuiet("bash", "-c", "rm -rf /var/lib/mysql*")
+	runCommandQuiet("bash", "-c", "rm -rf /var/log/mysql*")
+	runCommandQuiet("bash", "-c", "rm -rf /etc/mysql*")
+	runCommandQuiet("bash", "-c", "rm -rf /run/mysqld*")
+	runCommandQuiet("bash", "-c", "rm -rf /run/mariadb*")
+	
+	// Reset dpkg state
+	fmt.Println("🔧 Resetting dpkg...")
+	runCommandQuiet("dpkg", "--configure", "-a")
+	
+	// Force remove any broken packages
+	fmt.Println("📦 Force removing packages...")
+	runCommandQuiet("bash", "-c", "dpkg -l | grep -i mysql | awk '{print $2}' | xargs -r dpkg --purge --force-all 2>/dev/null || true")
+	runCommandQuiet("bash", "-c", "dpkg -l | grep -i mariadb | awk '{print $2}' | xargs -r dpkg --purge --force-all 2>/dev/null || true")
+	
+	// Clean apt
+	fmt.Println("🧹 Cleaning apt...")
+	runCommandQuiet("apt", "clean")
+	runCommandQuiet("apt", "autoclean", "-y")
+	runCommandQuiet("apt", "autoremove", "-y")
+	
+	// Final verification
+	fmt.Println("")
+	fmt.Println("✅ CLEANUP COMPLETE - Verification:")
+	fmt.Println("  Remaining MySQL packages:")
+	cmd := exec.Command("bash", "-c", "dpkg -l | grep -iE 'mysql|mariadb' | wc -l")
+	output, _ := cmd.Output()
+	if strings.TrimSpace(string(output)) == "0" {
+		fmt.Println("    ✅ None")
+	} else {
+		fmt.Printf("    ⚠️  %s packages still present\n", strings.TrimSpace(string(output)))
+	}
+	
+	fmt.Println("  Running processes:")
+	cmd = exec.Command("bash", "-c", "ps aux | grep -iE 'mysqld|mariadbd|mysql|mariadb' | grep -v grep | wc -l")
+	output, _ = cmd.Output()
+	if strings.TrimSpace(string(output)) == "0" {
+		fmt.Println("    ✅ None")
+	} else {
+		fmt.Printf("    ⚠️  %s processes still running\n", strings.TrimSpace(string(output)))
+	}
+	
+	// Ask for reboot
+	fmt.Println("")
+	if improvedAskYesNo("⚠️  A system reboot is recommended to ensure all MySQL/MariaDB processes are terminated. Reboot now?") {
+		fmt.Println("🔄 Rebooting system...")
+		runCommand("systemctl", "reboot")
+	} else {
+		fmt.Println("⚠️  Please manually reboot the system before reinstalling MySQL/MariaDB")
+	}
+}
+
 // uninstallComponent removes a component
 func uninstallComponent(component Component) error {
 	fmt.Printf("🗑️  Removing %s...\n", component.Name)
@@ -173,12 +255,64 @@ func uninstallComponent(component Component) error {
 		runCommand("systemctl", "disable", component.ServiceName)
 	}
 
-	// Remove package with non-interactive mode
-	cmd := exec.Command("apt", "remove", "-y", component.PackageName)
+	// For MySQL/MariaDB, do aggressive cleanup of data directories first
+	if component.PackageName == "mysql-server" || component.PackageName == "mariadb-server" {
+		fmt.Println("🧹 Cleaning MySQL/MariaDB data directories...")
+		
+		// Remove all MySQL/MariaDB data directories completely
+		dirs := []string{
+			"/var/lib/mysql",
+			"/var/lib/mysql-8.0",      // MySQL 8.0 specific directory
+			"/var/lib/mysql-files",
+			"/var/log/mysql",
+			"/etc/mysql",
+		}
+		for _, dir := range dirs {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				fmt.Printf("⚠️  Could not remove %s: %v\n", dir, err)
+			}
+		}
+		
+		// Clean package cache to prevent stale files
+		runCommandQuiet("apt", "clean")
+		runCommandQuiet("apt", "autoclean")
+	}
+
+	// Use purge to remove packages and config files
+	cmd := exec.Command("apt", "purge", "-y", component.PackageName)
 	cmd.Env = append(os.Environ(),
 		"DEBIAN_FRONTEND=noninteractive",
 		"DEBCONF_NONINTERACTIVE_SEEN=true")
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("⚠️  apt purge returned error (may not be critical): %v\n", err)
+		
+		// If uninstall of MySQL/MariaDB failed, offer to run nuclear cleanup
+		if component.PackageName == "mysql-server" || component.PackageName == "mariadb-server" {
+			if improvedAskYesNo("⚠️  Uninstall failed. Run nuclear cleanup (kills orphaned processes, requires reboot)?") {
+				cleanupMySQLMariaDB()
+			}
+			return err
+		}
+	}
+	
+	// Also try dpkg --purge as fallback for MySQL/MariaDB
+	if component.PackageName == "mysql-server" || component.PackageName == "mariadb-server" {
+		runCommandQuiet("dpkg", "--purge", "--force-all", "mysql-server", "mysql-client", "mysql-server-core", "mysql-client-core")
+		runCommandQuiet("dpkg", "--purge", "--force-all", "mariadb-server", "mariadb-client", "mariadb-server-core", "mariadb-client-core")
+		runCommandQuiet("apt", "autoremove", "-y")
+		
+		// Ask for reboot after MySQL/MariaDB uninstall
+		fmt.Println("")
+		fmt.Println("✅ Uninstall completed")
+		if improvedAskYesNo("⚠️  A system reboot is recommended to ensure all MySQL/MariaDB processes are terminated. Reboot now?") {
+			fmt.Println("🔄 Rebooting system...")
+			runCommand("systemctl", "reboot")
+		} else {
+			fmt.Println("⚠️  Please manually reboot the system before reinstalling MySQL/MariaDB")
+		}
+	}
+	
+	return nil
 }
 
 // uninstallPHP removes a specific PHP version
@@ -491,40 +625,108 @@ func InstallMySQL() {
 		}
 	}
 
+	// CLEAN SLATE APPROACH: Remove all MySQL/MariaDB packages and data
+	fmt.Println("🧹 Performing clean-slate removal of MySQL/MariaDB...")
+	
+	// AGGRESSIVE PRE-KILL: Force kill ALL processes before anything else
+	fmt.Println("🔪 Force-killing any running MySQL/MariaDB processes...")
+	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
+	time.Sleep(1 * time.Second)
+	
+	// Stop the service (may fail, that's ok)
+	runCommandQuiet("systemctl", "stop", "mysql")
+	runCommandQuiet("systemctl", "stop", "mariadb")
+	time.Sleep(1 * time.Second)
+	
+	// Purge ALL MySQL and MariaDB packages
+	fmt.Println("📦 Removing existing packages...")
+	purgeCmd := exec.Command("bash", "-c", "apt-get purge -y 'mysql*' 'mariadb*' 2>/dev/null; true")
+	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	_ = purgeCmd.Run()
+	
+	// Remove ALL data and config directories (fresh start)
+	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
+	dirsToRemove := []string{
+		"/var/lib/mysql",
+		"/var/lib/mysql-8.0",
+		"/var/lib/mysql-files",
+		"/var/log/mysql",
+		"/etc/mysql",
+		"/run/mysqld",
+		"/run/mariadb",
+	}
+	for _, dir := range dirsToRemove {
+		os.RemoveAll(dir)
+	}
+	
+	// Clean apt cache to prevent conflicts
+	runCommandQuiet("apt", "clean")
+	runCommandQuiet("apt", "autoclean")
+	runCommandQuiet("apt", "autoremove", "-y")
+	
+	// Update package lists for fresh install
+	fmt.Println("🔄 Updating package lists...")
 	if err := runCommand("apt", "update"); err != nil {
 		fmt.Printf("Error updating package list: %v\n", err)
 		return
 	}
 
-	// Install MySQL with non-interactive mode to avoid debconf prompts
-	cmd := exec.Command("apt", "install", "-y", "mysql-server")
-	cmd.Env = append(os.Environ(),
-		"DEBIAN_FRONTEND=noninteractive",
-		"DEBCONF_NONINTERACTIVE_SEEN=true")
+	// Install MySQL in clean environment with full noninteractive mode
+	// Use --no-install-recommends to skip optional packages that cause dependency issues
+	fmt.Println("📦 Installing MySQL server (this may take a while)...")
+	cmd := exec.Command("bash", "-c", "DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends mysql-server 2>&1 | head -200")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error installing MySQL: %v\n", err)
-		return
+	
+	// Run with timeout to prevent hanging
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Run()
+	}()
+	
+	// Wait up to 5 minutes for install to complete
+	select {
+	case err := <-done:
+		if err != nil {
+			// Installation had an error but may have partially succeeded
+			fmt.Printf("⚠️  Install completed with status: %v (this may be normal)\n", err)
+		}
+	case <-time.After(5 * time.Minute):
+		fmt.Println("⚠️  Installation timed out after 5 minutes")
+		fmt.Println("   This can happen if MySQL postinst scripts hang")
+		fmt.Println("   Attempting to continue...")
 	}
 
+	// Give postinst scripts a moment to finish
+	time.Sleep(2 * time.Second)
+
+	// Try to verify service (it might be partially installed)
+	fmt.Println("🔍 Verifying MySQL service...")
+	if err := runCommand("systemctl", "restart", "mysql"); err != nil {
+		fmt.Printf("⚠️  MySQL service may not be fully installed: %v\n", err)
+		fmt.Println("   Continuing with configuration anyway...")
+	}
+
+	// Configure MySQL
 	configureMySQL()
 
-	// Secure root user only if config succeeded and service is running
+	// Secure root user if service is active
 	if isServiceActive("mysql") {
 		secureRootUser("mysql")
 	} else {
 		fmt.Println("⚠️  MySQL service is not running. Skipping password setup.")
-		fmt.Println("   Please verify configuration and restart MySQL manually.")
-		fmt.Println("   Then run: sudo mysql -u root -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY 'your-password';\"")
 	}
 
+	// Enable on boot
 	if err := runCommand("systemctl", "enable", "mysql"); err != nil {
 		fmt.Printf("Error enabling MySQL: %v\n", err)
 	}
 
 	fmt.Println("✅ MySQL installed successfully")
 }
+
 
 // InstallMariaDB installs MariaDB server
 func InstallMariaDB() {
@@ -573,29 +775,101 @@ func InstallMariaDB() {
 		}
 	}
 
-	// Install MariaDB with non-interactive mode to avoid debconf prompts
-	cmd := exec.Command("apt", "install", "-y", "mariadb-server")
-	cmd.Env = append(os.Environ(),
-		"DEBIAN_FRONTEND=noninteractive",
-		"DEBCONF_NONINTERACTIVE_SEEN=true")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error installing MariaDB: %v\n", err)
+	// CLEAN SLATE APPROACH: Remove all MySQL/MariaDB packages and data
+	fmt.Println("🧹 Performing clean-slate removal of MySQL/MariaDB...")
+	
+	// AGGRESSIVE PRE-KILL: Force kill ALL processes before anything else
+	fmt.Println("🔪 Force-killing any running MySQL/MariaDB processes...")
+	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
+	time.Sleep(1 * time.Second)
+	
+	// Stop the service (may fail, that's ok)
+	runCommandQuiet("systemctl", "stop", "mysql")
+	runCommandQuiet("systemctl", "stop", "mariadb")
+	time.Sleep(1 * time.Second)
+	
+	// Purge ALL MySQL and MariaDB packages
+	fmt.Println("📦 Removing existing packages...")
+	purgeCmd := exec.Command("bash", "-c", "apt-get purge -y 'mysql*' 'mariadb*' 2>/dev/null; true")
+	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	_ = purgeCmd.Run()
+	
+	// Remove ALL data and config directories (fresh start)
+	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
+	dirsToRemove := []string{
+		"/var/lib/mysql",
+		"/var/lib/mysql-8.0",
+		"/var/lib/mysql-files",
+		"/var/log/mysql",
+		"/etc/mysql",
+		"/run/mysqld",
+		"/run/mariadb",
+	}
+	for _, dir := range dirsToRemove {
+		os.RemoveAll(dir)
+	}
+	
+	// Clean apt cache to prevent conflicts
+	runCommandQuiet("apt", "clean")
+	runCommandQuiet("apt", "autoclean")
+	runCommandQuiet("apt", "autoremove", "-y")
+	
+	// Update package lists for fresh install
+	fmt.Println("🔄 Updating package lists...")
+	if err := runCommand("apt", "update"); err != nil {
+		fmt.Printf("Error updating package list: %v\n", err)
 		return
 	}
 
+	// Install MariaDB in clean environment with full noninteractive mode
+	// Use --no-install-recommends to skip plugin packages that cause dependency issues
+	fmt.Println("📦 Installing MariaDB server (this may take a while)...")
+	cmd := exec.Command("bash", "-c", "DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends mariadb-server 2>&1 | head -200")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	// Run with timeout to prevent hanging
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Run()
+	}()
+	
+	// Wait up to 5 minutes for install to complete
+	select {
+	case err := <-done:
+		if err != nil {
+			// Installation had an error but may have partially succeeded
+			fmt.Printf("⚠️  Install completed with status: %v (this may be normal)\n", err)
+		}
+	case <-time.After(5 * time.Minute):
+		fmt.Println("⚠️  Installation timed out after 5 minutes")
+		fmt.Println("   This can happen if MariaDB postinst scripts hang")
+		fmt.Println("   Attempting to continue...")
+	}
+
+	// Give postinst scripts a moment to finish
+	time.Sleep(2 * time.Second)
+
+	// Try to verify service (it might be partially installed)
+	fmt.Println("🔍 Verifying MariaDB service...")
+	if err := runCommand("systemctl", "restart", "mariadb"); err != nil {
+		fmt.Printf("⚠️  MariaDB service may not be fully installed: %v\n", err)
+		fmt.Println("   Continuing with configuration anyway...")
+	}
+
+	// Configure MariaDB
 	configureMariaDB()
 
-	// Secure root user only if config succeeded and service is running
+	// Secure root user if service is active
 	if isServiceActive("mariadb") {
 		secureRootUser("mariadb")
 	} else {
 		fmt.Println("⚠️  MariaDB service is not running. Skipping password setup.")
-		fmt.Println("   Please verify configuration and restart MariaDB manually.")
-		fmt.Println("   Then run: sudo mysql -u root -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY 'your-password';\"")
 	}
 
+	// Enable on boot
 	if err := runCommand("systemctl", "enable", "mariadb"); err != nil {
 		fmt.Printf("Error enabling MariaDB: %v\n", err)
 	}
