@@ -66,10 +66,16 @@ var installMariadbCmd = &cobra.Command{
 }
 
 var installPostgresqlCmd = &cobra.Command{
-	Use:   "postgresql",
-	Short: "Install PostgreSQL database server",
+	Use:   "postgresql [version]",
+	Short: "Install PostgreSQL database server with optional version",
+	Long:  `Install PostgreSQL database server. Optionally specify version (e.g., 12, 13, 14, 15, 16). Default: latest available.`,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		installer.InstallPostgreSQL()
+		version := ""
+		if len(args) > 0 {
+			version = args[0]
+		}
+		installer.InstallPostgreSQLVersion(version)
 	},
 }
 

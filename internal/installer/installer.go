@@ -239,6 +239,72 @@ func cleanupMySQLMariaDB() {
 	}
 }
 
+// cleanupPostgreSQL performs nuclear cleanup for stuck/orphaned PostgreSQL processes
+func cleanupPostgreSQL() {
+	fmt.Println("\n🧨 NUCLEAR CLEANUP MODE - PostgreSQL")
+	fmt.Println("This will aggressively remove all PostgreSQL traces...")
+	
+	// Kill everything
+	fmt.Println("🔪 Killing all PostgreSQL processes...")
+	runCommandQuiet("bash", "-c", "pkill -9 postgres 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 postgresql 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 apt 2>/dev/null; true")
+	runCommandQuiet("bash", "-c", "pkill -9 dpkg 2>/dev/null; true")
+	time.Sleep(1 * time.Second)
+	
+	// Remove ALL PostgreSQL directories
+	fmt.Println("🗑️  Removing all PostgreSQL directories...")
+	runCommandQuiet("bash", "-c", "rm -rf /var/lib/postgresql*")
+	runCommandQuiet("bash", "-c", "rm -rf /var/log/postgresql*")
+	runCommandQuiet("bash", "-c", "rm -rf /etc/postgresql*")
+	runCommandQuiet("bash", "-c", "rm -rf /run/postgresql*")
+	runCommandQuiet("bash", "-c", "rm -rf /home/postgres")
+	
+	// Reset dpkg state
+	fmt.Println("🔧 Repairing dpkg state...")
+	runCommandQuiet("dpkg", "--configure", "-a")
+	
+	// Force remove all PostgreSQL packages
+	fmt.Println("💣 Force removing PostgreSQL packages...")
+	runCommandQuiet("dpkg", "--purge", "--force-all", "postgresql", "postgresql-contrib", "postgresql-client", "postgresql-common")
+	runCommandQuiet("apt", "autoremove", "-y")
+	
+	// Clean apt cache
+	fmt.Println("🧹 Cleaning APT cache...")
+	runCommandQuiet("apt", "clean")
+	runCommandQuiet("apt", "autoclean")
+	
+	// Final verification
+	fmt.Println("")
+	fmt.Println("✅ CLEANUP COMPLETE - Verification:")
+	fmt.Println("  Remaining PostgreSQL packages:")
+	cmd := exec.Command("bash", "-c", "dpkg -l | grep -iE 'postgresql' | wc -l")
+	output, _ := cmd.Output()
+	if strings.TrimSpace(string(output)) == "0" {
+		fmt.Println("    ✅ None")
+	} else {
+		fmt.Printf("    ⚠️  %s packages still present\n", strings.TrimSpace(string(output)))
+	}
+	
+	fmt.Println("  Running processes:")
+	cmd = exec.Command("bash", "-c", "ps aux | grep -iE 'postgres' | grep -v grep | wc -l")
+	output, _ = cmd.Output()
+	if strings.TrimSpace(string(output)) == "0" {
+		fmt.Println("    ✅ None")
+	} else {
+		fmt.Printf("    ⚠️  %s processes still running\n", strings.TrimSpace(string(output)))
+	}
+	
+	// Ask for reboot
+	fmt.Println("")
+	if improvedAskYesNo("⚠️  A system reboot is recommended to ensure all PostgreSQL processes are terminated. Reboot now?") {
+		fmt.Println("🔄 Rebooting system...")
+		runCommand("systemctl", "reboot")
+	} else {
+		fmt.Println("⚠️  Please manually reboot the system before reinstalling PostgreSQL")
+	}
+}
+
 // uninstallComponent removes a component
 func uninstallComponent(component Component) error {
 	fmt.Printf("🗑️  Removing %s...\n", component.Name)
@@ -272,21 +338,69 @@ func uninstallComponent(component Component) error {
 		runCommandQuiet("apt", "autoclean")
 	}
 
+	// For PostgreSQL, do aggressive cleanup of data directories first
+	if component.PackageName == "postgresql" {
+		fmt.Println("🧹 Cleaning PostgreSQL data directories...")
+		
+		// Remove all PostgreSQL data directories completely
+		dirs := []string{
+			"/var/lib/postgresql",
+			"/var/log/postgresql",
+			"/etc/postgresql",
+			"/run/postgresql",
+		}
+		for _, dir := range dirs {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				fmt.Printf("⚠️  Could not remove %s: %v\n", dir, err)
+			}
+		}
+		
+		// Clean package cache to prevent stale files
+		runCommandQuiet("apt", "clean")
+		runCommandQuiet("apt", "autoclean")
+	}
+
 	// Use purge to remove packages and config files
 	cmd := exec.Command("apt", "purge", "-y", component.PackageName)
 	cmd.Env = append(os.Environ(),
 		"DEBIAN_FRONTEND=noninteractive",
 		"DEBCONF_NONINTERACTIVE_SEEN=true")
+	
+	// Repair dpkg database BEFORE purge to ensure clean state
+	fmt.Println("🔧 Repairing dpkg database state (before)...")
+	runCommandQuiet("dpkg", "--configure", "-a")
+	
+	aptPurgeFailed := false
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("⚠️  apt purge returned error (may not be critical): %v\n", err)
+		aptPurgeFailed = true
+	}
+	
+	// Repair dpkg database AFTER purge to fix any issues from uninstall
+	fmt.Println("🔧 Repairing dpkg database state (after)...")
+	runCommandQuiet("dpkg", "--configure", "-a")
+	
+	// For PostgreSQL, always run aggressive cleanup to ensure complete removal
+	if strings.Contains(component.PackageName, "postgresql") {
+		fmt.Println("🧹 Running PostgreSQL package cleanup...")
+		runCommandQuiet("dpkg", "--purge", "--force-all", "postgresql", "postgresql-contrib", "postgresql-client", "postgresql-common")
+		runCommandQuiet("apt", "autoremove", "-y")
 		
-		// If uninstall of MySQL/MariaDB failed, offer to run nuclear cleanup
-		if component.PackageName == "mysql-server" || component.PackageName == "mariadb-server" {
-			if improvedAskYesNo("⚠️  Uninstall failed. Run nuclear cleanup (kills orphaned processes, requires reboot)?") {
-				cleanupMySQLMariaDB()
-			}
-			return err
+		// Ask for reboot after PostgreSQL uninstall
+		fmt.Println("")
+		fmt.Println("✅ Uninstall completed")
+		if improvedAskYesNo("⚠️  A system reboot is recommended to ensure all PostgreSQL processes are terminated. Reboot now?") {
+			fmt.Println("🔄 Rebooting system...")
+			runCommand("systemctl", "reboot")
+		} else {
+			fmt.Println("⚠️  Please manually reboot the system before reinstalling PostgreSQL")
 		}
+		
+		// Return error if apt purge failed
+		if aptPurgeFailed {
+			return fmt.Errorf("apt purge had errors - running dpkg fallback")
+		}
+		return nil
 	}
 	
 	// Also try dpkg --purge as fallback for MySQL/MariaDB
@@ -870,7 +984,16 @@ func InstallMariaDB() {
 
 // InstallPostgreSQL installs PostgreSQL server
 func InstallPostgreSQL() {
-	fmt.Println("📦 Installing PostgreSQL...")
+	InstallPostgreSQLVersion("")
+}
+
+// InstallPostgreSQLVersion installs a specific version of PostgreSQL or latest if version is empty
+func InstallPostgreSQLVersion(version string) {
+	if version == "" {
+		fmt.Println("📦 Installing PostgreSQL...")
+	} else {
+		fmt.Printf("📦 Installing PostgreSQL version %s...\n", version)
+	}
 
 	// Check if already installed
 	component := components["postgresql"]
@@ -900,8 +1023,58 @@ func InstallPostgreSQL() {
 		}
 	}
 
-	if err := runCommand("apt", "install", "-y", "postgresql", "postgresql-contrib"); err != nil {
-		fmt.Printf("Error installing PostgreSQL: %v\n", err)
+	// Pre-install cleanup
+	fmt.Println("🧹 Cleaning up previous PostgreSQL installations...")
+	runCommandQuiet("apt", "purge", "-y", "postgresql*")
+	runCommandQuiet("dpkg", "--purge", "--force-all", "postgresql", "postgresql-contrib", "postgresql-client", "postgresql-common")
+	runCommandQuiet("rm", "-rf", "/var/lib/postgresql*")
+	runCommandQuiet("rm", "-rf", "/etc/postgresql*")
+	runCommandQuiet("rm", "-rf", "/run/postgresql*")
+	runCommandQuiet("apt", "autoremove", "-y")
+	runCommandQuiet("apt", "clean")
+
+	// Build package specification
+	var pgPackage string
+	if version == "" {
+		pgPackage = "postgresql"
+	} else {
+		pgPackage = fmt.Sprintf("postgresql=%s*", version)
+	}
+
+	// Setup timeout for installation (prevent hanging)
+	done := make(chan error, 1)
+	go func() {
+		if err := runCommand("apt", "update"); err != nil {
+			done <- fmt.Errorf("apt update failed: %v", err)
+			return
+		}
+
+		// Fix broken dependencies before install
+		fmt.Println("🔧 Fixing broken dependencies (before install)...")
+		runCommandQuiet("apt", "--fix-broken", "install", "-y")
+
+		if err := runCommand("apt", "install", "-y", pgPackage, "postgresql-contrib"); err != nil {
+			done <- fmt.Errorf("postgres installation failed: %v", err)
+			return
+		}
+
+		// Fix broken dependencies after install
+		fmt.Println("🔧 Fixing broken dependencies (after install)...")
+		runCommandQuiet("apt", "--fix-broken", "install", "-y")
+
+		done <- nil
+	}()
+
+	// 5-minute timeout
+	select {
+	case err := <-done:
+		if err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+	case <-time.After(5 * time.Minute):
+		fmt.Println("❌ PostgreSQL installation timed out (5 minutes)")
+		fmt.Println("💡 Try manually: sudo apt install postgresql postgresql-contrib")
 		return
 	}
 
@@ -911,7 +1084,11 @@ func InstallPostgreSQL() {
 		fmt.Printf("Error enabling PostgreSQL: %v\n", err)
 	}
 
-	fmt.Println("✅ PostgreSQL installed successfully")
+	if version == "" {
+		fmt.Println("✅ PostgreSQL installed successfully")
+	} else {
+		fmt.Printf("✅ PostgreSQL %s installed successfully\n", version)
+	}
 }
 
 // InstallPHP installs specific PHP-FPM version
@@ -1061,6 +1238,11 @@ func InstallMySQLVersion(version string) {
 	
 	// Install specific MySQL version
 	fmt.Printf("📦 Installing MySQL version %s...\n", version)
+	
+	// Fix broken dependencies before install
+	fmt.Println("🔧 Fixing broken dependencies (before install)...")
+	runCommandQuiet("apt", "--fix-broken", "install", "-y")
+	
 	packageSpec := fmt.Sprintf("mysql-server=%s*", version)
 	cmd := exec.Command("bash", "-c", fmt.Sprintf("DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends '%s' 2>&1 | head -200", packageSpec))
 	cmd.Stdout = os.Stdout
@@ -1080,6 +1262,10 @@ func InstallMySQLVersion(version string) {
 		fmt.Println("⚠️  Installation timed out after 5 minutes")
 		fmt.Println("   Continuing anyway...")
 	}
+	
+	// Fix broken dependencies after install
+	fmt.Println("🔧 Fixing broken dependencies (after install)...")
+	runCommandQuiet("apt", "--fix-broken", "install", "-y")
 	
 	time.Sleep(2 * time.Second)
 	
@@ -1171,6 +1357,11 @@ func InstallMariaDBVersion(version string) {
 	
 	// Install specific MariaDB version
 	fmt.Printf("📦 Installing MariaDB version %s...\n", version)
+	
+	// Fix broken dependencies before install
+	fmt.Println("🔧 Fixing broken dependencies (before install)...")
+	runCommandQuiet("apt", "--fix-broken", "install", "-y")
+	
 	packageSpec := fmt.Sprintf("mariadb-server=%s*", version)
 	cmd := exec.Command("bash", "-c", fmt.Sprintf("DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends '%s' 2>&1 | head -200", packageSpec))
 	cmd.Stdout = os.Stdout
@@ -1190,6 +1381,10 @@ func InstallMariaDBVersion(version string) {
 		fmt.Println("⚠️  Installation timed out after 5 minutes")
 		fmt.Println("   Continuing anyway...")
 	}
+	
+	// Fix broken dependencies after install
+	fmt.Println("🔧 Fixing broken dependencies (after install)...")
+	runCommandQuiet("apt", "--fix-broken", "install", "-y")
 	
 	time.Sleep(2 * time.Second)
 	
@@ -1385,11 +1580,9 @@ func UninstallPostgreSQL() {
 	}
 
 	if err := uninstallComponent(component); err != nil {
-		fmt.Printf("❌ Error uninstalling PostgreSQL: %v\n", err)
-		return
+		fmt.Printf("⚠️  Uninstall returned error: %v\n", err)
+		// The uninstallComponent handles the cleanup and reboot prompts, so we're good
 	}
-
-	fmt.Println("✅ PostgreSQL uninstalled successfully")
 }
 
 // UninstallPHP removes a specific PHP version
@@ -1697,9 +1890,78 @@ func configureMariaDB() bool {
 }
 
 func configurePostgreSQL() {
-	// TODO: Apply PostgreSQL configuration from templates
 	fmt.Println("⚙️  Configuring PostgreSQL...")
+	
+	fmt.Println("🔐 Securing database postgres user...")
+
+	// Ask user if they want to set a password or auto-generate one
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter password for postgres user (press Enter for auto-generated password): ")
+	
+	userInput, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error reading input: %v\n", err)
+		return
+	}
+
+	userInput = strings.TrimSpace(userInput)
+	var postgresPassword string
+
+	if userInput == "" {
+		// Auto-generate password
+		postgresPassword = generateRandomPassword(24)
+		fmt.Println("✓ Auto-generated password will be used")
+	} else {
+		postgresPassword = userInput
+		fmt.Println("✓ Password set")
+	}
+
+	// Set password for postgres user using sudo
+	// PostgreSQL stores the password encrypted, so we use psql to set it
+	sqlCommand := fmt.Sprintf("ALTER USER postgres WITH PASSWORD '%s';", postgresPassword)
+	cmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", sqlCommand)
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("⚠️  Warning: Could not set postgres password: %v\n", err)
+		fmt.Println("   You can manually set it with: sudo -u postgres psql -c \"ALTER USER postgres WITH PASSWORD 'newpassword';\"")
+		return
+	}
+
+	// Save credentials to secure file
+	os.MkdirAll("/etc/webstack", 0755)
+	credsPath := "/etc/webstack/postgresql-root-credentials.txt"
+	creds := fmt.Sprintf(`PostgreSQL Superuser Credentials
+================================
+User: postgres
+Host: localhost
+Password: %s
+
+Location: %s
+Permissions: 600 (readable by root only)
+
+How to use:
+  psql -U postgres -h localhost
+  (enter password when prompted)
+
+Or with password in connection string:
+  psql -U postgres -h localhost -W
+
+Connection String:
+  postgresql://postgres:%s@localhost:5432/postgres
+
+Security Notes:
+- This file is only readable by root
+- PostgreSQL user 'postgres' is the superuser account
+- Do not share this password
+- Consider using peer authentication for local connections
+`, postgresPassword, credsPath, postgresPassword)
+
+	if err := os.WriteFile(credsPath, []byte(creds), 0600); err != nil {
+		fmt.Printf("⚠️  Warning: Could not save credentials: %v\n", err)
+	} else {
+		fmt.Printf("✅ Credentials saved to %s (readable by root only)\n", credsPath)
+	}
 }
+
 
 func configurePHP(version string) {
 	// TODO: Apply PHP-FPM configuration from templates
