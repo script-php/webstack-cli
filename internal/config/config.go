@@ -15,6 +15,8 @@ type ServerConfig struct {
 	Installed bool   `json:"installed"`
 	Port      int    `json:"port"`
 	Mode      string `json:"mode"` // "standalone", "proxy", "backend"
+	Username  string `json:"username,omitempty"` // For databases
+	Password  string `json:"password,omitempty"` // For databases
 }
 
 // Config represents the main configuration structure

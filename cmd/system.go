@@ -812,7 +812,7 @@ func enablePostgreSQLRemoteAccess() {
 	}
 
 	// Get user password
-	fmt.Print("🔐 Enter password for user '%s': ")
+	fmt.Printf("🔐 Enter password for user '%s': ", dbUser)
 	var password string
 	fmt.Scanln(&password)
 
