@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -36,6 +38,65 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show system status",
 	Run:   showSystemStatus,
+}
+
+var remoteAccessCmd = &cobra.Command{
+	Use:   "remote-access",
+	Short: "Configure remote database access",
+	Long:  `Enable or disable remote connections to MySQL/MariaDB/PostgreSQL.`,
+}
+
+var remoteAccessEnableCmd = &cobra.Command{
+	Use:   "enable [database] [user] [password]",
+	Short: "Enable remote access for a database",
+	Long:  `Enable remote connections for MySQL, MariaDB, or PostgreSQL.
+Usage: 
+  webstack system remote-access enable mysql (interactive prompts)
+  webstack system remote-access enable mysql root rootpass (with args)
+  webstack system remote-access enable mysql appuser apppass`,
+	Args:  cobra.MinimumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		dbType := strings.ToLower(args[0])
+		var user, password string
+		if len(args) >= 3 {
+			user = args[1]
+			password = args[2]
+			enableRemoteAccessWithArgs(dbType, user, password)
+		} else {
+			enableRemoteAccess(dbType)
+		}
+	},
+}
+
+var remoteAccessDisableCmd = &cobra.Command{
+	Use:   "disable [database] [user]",
+	Short: "Disable remote access for a database",
+	Long:  `Disable remote connections for MySQL, MariaDB, or PostgreSQL.
+Usage:
+  webstack system remote-access disable mysql (interactive prompts)
+  webstack system remote-access disable mysql root (with user)`,
+	Args:  cobra.MinimumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		dbType := strings.ToLower(args[0])
+		var user string
+		if len(args) >= 2 {
+			user = args[1]
+			disableRemoteAccessWithArgs(dbType, user)
+		} else {
+			disableRemoteAccess(dbType)
+		}
+	},
+}
+
+var remoteAccessStatusCmd = &cobra.Command{
+	Use:   "status [database]",
+	Short: "Check remote access status for a database",
+	Long:  `Check if remote connections are enabled for MySQL, MariaDB, or PostgreSQL. Usage: webstack system remote-access status mysql`,
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		dbType := strings.ToLower(args[0])
+		checkRemoteAccessStatus(dbType)
+	},
 }
 
 func reloadConfigurations(cmd *cobra.Command, args []string) {
@@ -235,12 +296,735 @@ func runSystemCommand(name string, args ...string) error {
 	return cmd.Run()
 }
 
+// Helper functions with arguments (non-interactive)
+func enableRemoteAccessWithArgs(dbType, user, password string) {
+	fmt.Printf("🔓 Enabling remote access for %s (user: %s)...\n", dbType, user)
+
+	switch dbType {
+	case "mysql":
+		enableMySQLRemoteAccessWithArgs(user, password)
+	case "mariadb":
+		enableMySQLRemoteAccessWithArgs(user, password) // Same as MySQL
+	case "postgresql":
+		enablePostgreSQLRemoteAccessWithArgs(user, password)
+	default:
+		fmt.Printf("❌ Unknown database type: %s\n", dbType)
+		fmt.Println("Supported: mysql, mariadb, postgresql")
+	}
+}
+
+func disableRemoteAccessWithArgs(dbType, user string) {
+	fmt.Printf("🔒 Disabling remote access for %s (user: %s)...\n", dbType, user)
+
+	switch dbType {
+	case "mysql":
+		disableMySQLRemoteAccessWithArgs(user)
+	case "mariadb":
+		disableMySQLRemoteAccessWithArgs(user)
+	case "postgresql":
+		disablePostgreSQLRemoteAccessWithArgs(user)
+	default:
+		fmt.Printf("❌ Unknown database type: %s\n", dbType)
+		fmt.Println("Supported: mysql, mariadb, postgresql")
+	}
+}
+
+// Remote access functions for MySQL/MariaDB
+func enableRemoteAccess(dbType string) {
+	fmt.Printf("🔓 Enabling remote access for %s...\n", dbType)
+
+	switch dbType {
+	case "mysql":
+		enableMySQLRemoteAccess()
+	case "mariadb":
+		enableMariaDBRemoteAccess()
+	case "postgresql":
+		enablePostgreSQLRemoteAccess()
+	default:
+		fmt.Printf("❌ Unknown database type: %s\n", dbType)
+		fmt.Println("Supported: mysql, mariadb, postgresql")
+	}
+}
+
+func disableRemoteAccess(dbType string) {
+	fmt.Printf("🔒 Disabling remote access for %s...\n", dbType)
+
+	switch dbType {
+	case "mysql":
+		disableMySQLRemoteAccess()
+	case "mariadb":
+		disableMariaDBRemoteAccess()
+	case "postgresql":
+		disablePostgreSQLRemoteAccess()
+	default:
+		fmt.Printf("❌ Unknown database type: %s\n", dbType)
+		fmt.Println("Supported: mysql, mariadb, postgresql")
+	}
+}
+
+func checkRemoteAccessStatus(dbType string) {
+	switch dbType {
+	case "mysql", "mariadb":
+		checkMySQLRemoteAccessStatus(dbType)
+	case "postgresql":
+		checkPostgreSQLRemoteAccessStatus()
+	default:
+		fmt.Printf("❌ Unknown database type: %s\n", dbType)
+		fmt.Println("Supported: mysql, mariadb, postgresql")
+	}
+}
+
+func enableMySQLRemoteAccess() {
+	configFile := "/etc/mysql/mariadb.conf.d/99-webstack.cnf"
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		configFile = "/etc/mysql/mysql.conf.d/mysqld.cnf"
+	}
+
+	// Prompt user for IP/network
+	fmt.Println("\n📋 MySQL/MariaDB Remote Access Configuration")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("Allow connections from:")
+	fmt.Println("  1. Any IP (%) - LESS SECURE")
+	fmt.Println("  2. Specific IP address")
+	fmt.Println("  3. Specific subnet (e.g., 192.168.1.%)")
+	fmt.Print("\nEnter choice (1-3) or custom address: ")
+
+	var input string
+	fmt.Scanln(&input)
+
+	var bindAddress, hostPattern string
+	switch input {
+	case "1":
+		bindAddress = "0.0.0.0"
+		hostPattern = "%"
+		fmt.Println("⚠️  WARNING: Allowing connections from ANY IP is less secure!")
+	case "2":
+		fmt.Print("Enter IP address: ")
+		fmt.Scanln(&bindAddress)
+		hostPattern = bindAddress
+	case "3":
+		fmt.Print("Enter subnet pattern (e.g., 192.168.1.%): ")
+		fmt.Scanln(&hostPattern)
+		bindAddress = "0.0.0.0"
+	default:
+		bindAddress = "0.0.0.0"
+		hostPattern = input
+	}
+
+	fmt.Printf("\n✓ Allowing connections from: %s\n", hostPattern)
+
+	// Update config file
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	// Replace bind-address with new value
+	if strings.Contains(content, "bind-address") {
+		// Match bind-address lines with various formats
+		lines := strings.Split(content, "\n")
+		for i, line := range lines {
+			if strings.Contains(line, "bind-address") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				lines[i] = "bind-address = " + bindAddress
+				break
+			}
+		}
+		content = strings.Join(lines, "\n")
+	} else {
+		// If not found, add it
+		content += "\nbind-address = " + bindAddress + "\n"
+	}
+
+	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
+		fmt.Printf("❌ Error writing config: %v\n", err)
+		return
+	}
+
+	service := "mysql"
+	if _, err := exec.Command("systemctl", "is-active", "mariadb").Output(); err == nil {
+		service = "mariadb"
+	}
+
+	if err := exec.Command("systemctl", "restart", service).Run(); err != nil {
+		fmt.Printf("❌ Error restarting %s: %v\n", service, err)
+		return
+	}
+
+	fmt.Println("✓ Updated bind-address in config")
+
+	// Get admin user (for running GRANT command)
+	fmt.Print("\n� Enter MySQL/MariaDB admin user (default: root): ")
+	var adminUser string
+	fmt.Scanln(&adminUser)
+	if adminUser == "" {
+		adminUser = "root"
+	}
+
+	// Get admin password
+	fmt.Print("🔐 Enter admin user password: ")
+	var adminPassword string
+	fmt.Scanln(&adminPassword)
+
+	// Ask which user to grant privileges to
+	fmt.Print("\n👤 Enter database user to grant remote access (default: root): ")
+	var dbUser string
+	fmt.Scanln(&dbUser)
+	if dbUser == "" {
+		dbUser = "root"
+	}
+
+	// Ask for user password (for IDENTIFIED BY)
+	fmt.Print("🔐 Enter password for user '%s': ", dbUser)
+	var userPassword string
+	fmt.Scanln(&userPassword)
+
+	// Update database user privileges
+	fmt.Printf("✓ Granting privileges to %s@%s...\n", dbUser, hostPattern)
+	grantCmd := fmt.Sprintf("GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' IDENTIFIED BY '%s' WITH GRANT OPTION; FLUSH PRIVILEGES;",
+		dbUser, hostPattern, userPassword)
+	
+	mysqlCmd := exec.Command("mysql", "-u", adminUser, "-p"+adminPassword, "-e", grantCmd)
+	if err := mysqlCmd.Run(); err != nil {
+		fmt.Printf("❌ Error granting privileges: %v\n", err)
+		fmt.Println("   You may need to run manually:")
+		fmt.Printf("   mysql -u %s -p -e \"GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION; FLUSH PRIVILEGES;\"\n", adminUser, dbUser, hostPattern)
+		return
+	}
+
+	fmt.Printf("✅ Remote access enabled for %s\n", service)
+	fmt.Printf("   Listening on: %s:3306\n", bindAddress)
+	fmt.Printf("   User '%s' can connect from: %s\n", dbUser, hostPattern)
+	fmt.Printf("   Connect from: mysql -u %s -h <server-ip> -p\n", dbUser)
+}
+
+func disableMySQLRemoteAccess() {
+	configFile := "/etc/mysql/mariadb.conf.d/99-webstack.cnf"
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		configFile = "/etc/mysql/mysql.conf.d/mysqld.cnf"
+	}
+
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "bind-address") {
+		lines := strings.Split(content, "\n")
+		for i, line := range lines {
+			if strings.Contains(line, "bind-address") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				lines[i] = "bind-address = 127.0.0.1"
+				break
+			}
+		}
+		content = strings.Join(lines, "\n")
+	}
+
+	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
+		fmt.Printf("❌ Error writing config: %v\n", err)
+		return
+	}
+
+	service := "mysql"
+	if _, err := exec.Command("systemctl", "is-active", "mariadb").Output(); err == nil {
+		service = "mariadb"
+	}
+
+	if err := exec.Command("systemctl", "restart", service).Run(); err != nil {
+		fmt.Printf("❌ Error restarting %s: %v\n", service, err)
+		return
+	}
+
+	fmt.Println("✓ Updated bind-address in config")
+
+	// Get admin user (for running queries)
+	fmt.Print("\n� Enter MySQL/MariaDB admin user (default: root): ")
+	var adminUser string
+	fmt.Scanln(&adminUser)
+	if adminUser == "" {
+		adminUser = "root"
+	}
+
+	// Get admin password
+	fmt.Print("🔐 Enter admin user password: ")
+	var adminPassword string
+	fmt.Scanln(&adminPassword)
+
+	// Ask which user to revoke privileges from
+	fmt.Print("\n👤 Enter database user to revoke remote access (default: root): ")
+	var dbUser string
+	fmt.Scanln(&dbUser)
+	if dbUser == "" {
+		dbUser = "root"
+	}
+
+	// Revoke remote privileges and keep only localhost
+	fmt.Printf("✓ Revoking remote access privileges for %s...\n", dbUser)
+	revokeCmd := fmt.Sprintf("DELETE FROM mysql.user WHERE User='%s' AND Host NOT IN ('localhost', '127.0.0.1', '::1'); FLUSH PRIVILEGES;", dbUser)
+	
+	mysqlCmd := exec.Command("mysql", "-u", adminUser, "-p"+adminPassword, "-e", revokeCmd)
+	if err := mysqlCmd.Run(); err != nil {
+		fmt.Printf("⚠️  Warning: Could not revoke remote privileges: %v\n", err)
+		fmt.Println("   You may need to run manually:")
+		fmt.Printf("   mysql -u %s -p -e \"DELETE FROM mysql.user WHERE User='%s' AND Host NOT IN ('localhost', '127.0.0.1', '::1'); FLUSH PRIVILEGES;\"\n", adminUser, dbUser)
+	}
+
+	fmt.Printf("✅ Remote access disabled for %s (localhost only)\n", service)
+}
+
+// MySQL/MariaDB functions with direct arguments (non-interactive)
+func enableMySQLRemoteAccessWithArgs(user, password string) {
+	configFile := "/etc/mysql/mariadb.conf.d/99-webstack.cnf"
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		configFile = "/etc/mysql/mysql.conf.d/mysqld.cnf"
+	}
+
+	// Set to allow from any host (%)
+	hostPattern := "%"
+	bindAddress := "0.0.0.0"
+
+	// Update config file
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "bind-address") {
+		lines := strings.Split(content, "\n")
+		for i, line := range lines {
+			if strings.Contains(line, "bind-address") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				lines[i] = "bind-address = " + bindAddress
+				break
+			}
+		}
+		content = strings.Join(lines, "\n")
+	} else {
+		content += "\nbind-address = " + bindAddress + "\n"
+	}
+
+	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
+		fmt.Printf("❌ Error writing config: %v\n", err)
+		return
+	}
+
+	service := "mysql"
+	if _, err := exec.Command("systemctl", "is-active", "mariadb").Output(); err == nil {
+		service = "mariadb"
+	}
+
+	if err := exec.Command("systemctl", "restart", service).Run(); err != nil {
+		fmt.Printf("❌ Error restarting %s: %v\n", service, err)
+		return
+	}
+
+	fmt.Println("✓ Updated bind-address in config")
+
+	// Grant privileges using provided credentials
+	fmt.Printf("✓ Granting privileges to %s@%s...\n", user, hostPattern)
+	grantCmd := fmt.Sprintf("GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' IDENTIFIED BY '%s' WITH GRANT OPTION; FLUSH PRIVILEGES;",
+		user, hostPattern, password)
+	
+	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+password, "-e", grantCmd)
+	if err := mysqlCmd.Run(); err != nil {
+		// Try with the provided user as admin
+		mysqlCmd = exec.Command("mysql", "-u", user, "-p"+password, "-e", grantCmd)
+		if err := mysqlCmd.Run(); err != nil {
+			fmt.Printf("❌ Error granting privileges: %v\n", err)
+			fmt.Println("   You may need to run manually:")
+			fmt.Printf("   mysql -u root -p -e \"GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION; FLUSH PRIVILEGES;\"\n", user, hostPattern)
+			return
+		}
+	}
+
+	fmt.Printf("✅ Remote access enabled for %s\n", service)
+	fmt.Printf("   Listening on: %s:3306\n", bindAddress)
+	fmt.Printf("   User '%s' can connect from: %s\n", user, hostPattern)
+	fmt.Printf("   Connect from: mysql -u %s -h <server-ip> -p\n", user)
+}
+
+func disableMySQLRemoteAccessWithArgs(user string) {
+	configFile := "/etc/mysql/mariadb.conf.d/99-webstack.cnf"
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		configFile = "/etc/mysql/mysql.conf.d/mysqld.cnf"
+	}
+
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "bind-address") {
+		lines := strings.Split(content, "\n")
+		for i, line := range lines {
+			if strings.Contains(line, "bind-address") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				lines[i] = "bind-address = 127.0.0.1"
+				break
+			}
+		}
+		content = strings.Join(lines, "\n")
+	}
+
+	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
+		fmt.Printf("❌ Error writing config: %v\n", err)
+		return
+	}
+
+	service := "mysql"
+	if _, err := exec.Command("systemctl", "is-active", "mariadb").Output(); err == nil {
+		service = "mariadb"
+	}
+
+	if err := exec.Command("systemctl", "restart", service).Run(); err != nil {
+		fmt.Printf("❌ Error restarting %s: %v\n", service, err)
+		return
+	}
+
+	fmt.Println("✓ Updated bind-address in config")
+	fmt.Printf("✅ Remote access disabled for %s (localhost only)\n", service)
+	fmt.Printf("   User '%s' - remote connections revoked\n", user)
+}
+
+func checkMySQLRemoteAccessStatus(dbType string) {
+	configFile := "/etc/mysql/mariadb.conf.d/99-webstack.cnf"
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		configFile = "/etc/mysql/mysql.conf.d/mysqld.cnf"
+	}
+
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "#bind-address") || !strings.Contains(content, "bind-address") {
+		fmt.Printf("🔓 Remote access is ENABLED for %s\n", dbType)
+		fmt.Println("   Any client can connect if they have valid credentials")
+	} else {
+		fmt.Printf("🔒 Remote access is DISABLED for %s\n", dbType)
+		fmt.Println("   Only localhost connections are allowed")
+	}
+}
+
+func enableMariaDBRemoteAccess() {
+	enableMySQLRemoteAccess()
+}
+
+func disableMariaDBRemoteAccess() {
+	disableMySQLRemoteAccess()
+}
+
+// PostgreSQL remote access functions
+func enablePostgreSQLRemoteAccess() {
+	matches, _ := exec.Command("bash", "-c", "ls /etc/postgresql/*/main/postgresql.conf 2>/dev/null | head -1").Output()
+	if len(matches) == 0 {
+		fmt.Println("❌ PostgreSQL configuration file not found")
+		return
+	}
+
+	configFile := strings.TrimSpace(string(matches))
+
+	// Prompt user for IP/network
+	fmt.Println("\n📋 PostgreSQL Remote Access Configuration")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("Allow connections from:")
+	fmt.Println("  1. Any IP (0.0.0.0/0) - LESS SECURE")
+	fmt.Println("  2. Specific IP address")
+	fmt.Println("  3. Specific subnet (e.g., 192.168.1.0/24)")
+	fmt.Print("\nEnter choice (1-3) or custom address: ")
+
+	var input string
+	fmt.Scanln(&input)
+
+	var cidrAddress string
+	switch input {
+	case "1":
+		cidrAddress = "0.0.0.0/0"
+		fmt.Println("⚠️  WARNING: Allowing connections from ANY IP is less secure!")
+	case "2":
+		fmt.Print("Enter IP address (will use /32 for single host): ")
+		fmt.Scanln(&input)
+		cidrAddress = input + "/32"
+	case "3":
+		fmt.Print("Enter subnet (e.g., 192.168.1.0/24): ")
+		fmt.Scanln(&cidrAddress)
+	default:
+		cidrAddress = input
+	}
+
+	fmt.Printf("\n✓ Allowing connections from: %s\n", cidrAddress)
+
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "#listen_addresses = 'localhost'") {
+		content = strings.ReplaceAll(content, "#listen_addresses = 'localhost'", "listen_addresses = '*'")
+	} else if strings.Contains(content, "listen_addresses = 'localhost'") {
+		content = strings.ReplaceAll(content, "listen_addresses = 'localhost'", "listen_addresses = '*'")
+	}
+
+	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
+		fmt.Printf("❌ Error writing config: %v\n", err)
+		return
+	}
+
+	pgHbaFile := strings.ReplaceAll(configFile, "postgresql.conf", "pg_hba.conf")
+	pgHbaData, _ := ioutil.ReadFile(pgHbaFile)
+	pgHbaContent := string(pgHbaData)
+
+	// Remove any existing remote connection lines
+	lines := strings.Split(pgHbaContent, "\n")
+	var filteredLines []string
+	for _, line := range lines {
+		if !strings.Contains(line, "# Remote connections") && !strings.Contains(line, "host    all") {
+			filteredLines = append(filteredLines, line)
+		}
+	}
+	pgHbaContent = strings.Join(filteredLines, "\n")
+
+	// Add new remote connection line with md5 auth
+	pgHbaContent += fmt.Sprintf("\n# Remote connections\nhost    all             all             %s               md5\n", cidrAddress)
+	ioutil.WriteFile(pgHbaFile, []byte(pgHbaContent), 0644)
+	fmt.Println("✓ Updated pg_hba.conf to allow remote connections")
+
+	if err := exec.Command("systemctl", "restart", "postgresql").Run(); err != nil {
+		fmt.Printf("❌ Error restarting PostgreSQL: %v\n", err)
+		return
+	}
+
+	// Grant privileges to postgres user
+	fmt.Print("\n� Enter PostgreSQL user to grant remote access (default: postgres): ")
+	var dbUser string
+	fmt.Scanln(&dbUser)
+	if dbUser == "" {
+		dbUser = "postgres"
+	}
+
+	// Get user password
+	fmt.Print("🔐 Enter password for user '%s': ")
+	var password string
+	fmt.Scanln(&password)
+
+	fmt.Printf("✓ Setting password for %s user...\n", dbUser)
+	altersqlCmd := fmt.Sprintf("ALTER USER %s WITH PASSWORD '%s';", dbUser, password)
+	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", altersqlCmd)
+	if err := psqlCmd.Run(); err != nil {
+		fmt.Printf("⚠️  Warning: Could not set password: %v\n", err)
+		fmt.Println("   You may need to run manually:")
+		fmt.Printf("   sudo -u postgres psql -c \"ALTER USER %s WITH PASSWORD 'your_password';\"\n", dbUser)
+	}
+
+	fmt.Println("✅ Remote access enabled for PostgreSQL")
+	fmt.Printf("   Listening on: 0.0.0.0:5432 (from %s)\n", cidrAddress)
+	fmt.Printf("   User '%s' can connect from: psql -U %s -h <server-ip> -d postgres\n", dbUser, dbUser)
+}
+
+func disablePostgreSQLRemoteAccess() {
+	matches, _ := exec.Command("bash", "-c", "ls /etc/postgresql/*/main/postgresql.conf 2>/dev/null | head -1").Output()
+	if len(matches) == 0 {
+		fmt.Println("❌ PostgreSQL configuration file not found")
+		return
+	}
+
+	configFile := strings.TrimSpace(string(matches))
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "listen_addresses = '*'") {
+		content = strings.ReplaceAll(content, "listen_addresses = '*'", "#listen_addresses = 'localhost'")
+	}
+
+	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
+		fmt.Printf("❌ Error writing config: %v\n", err)
+		return
+	}
+
+	if err := exec.Command("systemctl", "restart", "postgresql").Run(); err != nil {
+		fmt.Printf("❌ Error restarting PostgreSQL: %v\n", err)
+		return
+	}
+
+	// Ask which user to revoke privileges from
+	fmt.Print("\n👤 Enter PostgreSQL user to revoke remote access (default: postgres): ")
+	var dbUser string
+	fmt.Scanln(&dbUser)
+	if dbUser == "" {
+		dbUser = "postgres"
+	}
+
+	// Reset user password (optional)
+	fmt.Print("Reset password for user? (y/n, default: n): ")
+	var resetPass string
+	fmt.Scanln(&resetPass)
+	
+	if resetPass == "y" || resetPass == "Y" {
+		fmt.Print("Enter new password for user '%s': ")
+		var password string
+		fmt.Scanln(&password)
+		
+		resetCmd := fmt.Sprintf("ALTER USER %s WITH PASSWORD '%s';", dbUser, password)
+		psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", resetCmd)
+		if err := psqlCmd.Run(); err != nil {
+			fmt.Printf("⚠️  Warning: Could not reset password: %v\n", err)
+		}
+	}
+
+	fmt.Printf("✅ Remote access disabled for PostgreSQL (localhost only)\n")
+	fmt.Printf("   User '%s' - remote connections revoked\n", dbUser)
+}
+
+// PostgreSQL functions with direct arguments (non-interactive)
+func enablePostgreSQLRemoteAccessWithArgs(user, password string) {
+	matches, _ := exec.Command("bash", "-c", "ls /etc/postgresql/*/main/postgresql.conf 2>/dev/null | head -1").Output()
+	if len(matches) == 0 {
+		fmt.Println("❌ PostgreSQL configuration file not found")
+		return
+	}
+
+	configFile := strings.TrimSpace(string(matches))
+	cidrAddress := "0.0.0.0/0"
+
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "#listen_addresses = 'localhost'") {
+		content = strings.ReplaceAll(content, "#listen_addresses = 'localhost'", "listen_addresses = '*'")
+	} else if strings.Contains(content, "listen_addresses = 'localhost'") {
+		content = strings.ReplaceAll(content, "listen_addresses = 'localhost'", "listen_addresses = '*'")
+	}
+
+	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
+		fmt.Printf("❌ Error writing config: %v\n", err)
+		return
+	}
+
+	pgHbaFile := strings.ReplaceAll(configFile, "postgresql.conf", "pg_hba.conf")
+	pgHbaData, _ := ioutil.ReadFile(pgHbaFile)
+	pgHbaContent := string(pgHbaData)
+
+	// Remove any existing remote connection lines
+	lines := strings.Split(pgHbaContent, "\n")
+	var filteredLines []string
+	for _, line := range lines {
+		if !strings.Contains(line, "# Remote connections") && !strings.Contains(line, "host    all") {
+			filteredLines = append(filteredLines, line)
+		}
+	}
+	pgHbaContent = strings.Join(filteredLines, "\n")
+
+	// Add new remote connection line with md5 auth
+	pgHbaContent += fmt.Sprintf("\n# Remote connections\nhost    all             all             %s               md5\n", cidrAddress)
+	ioutil.WriteFile(pgHbaFile, []byte(pgHbaContent), 0644)
+	fmt.Println("✓ Updated pg_hba.conf to allow remote connections")
+
+	if err := exec.Command("systemctl", "restart", "postgresql").Run(); err != nil {
+		fmt.Printf("❌ Error restarting PostgreSQL: %v\n", err)
+		return
+	}
+
+	fmt.Printf("✓ Setting password for %s user...\n", user)
+	altersqlCmd := fmt.Sprintf("ALTER USER %s WITH PASSWORD '%s';", user, password)
+	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", altersqlCmd)
+	if err := psqlCmd.Run(); err != nil {
+		fmt.Printf("⚠️  Warning: Could not set password: %v\n", err)
+		fmt.Println("   You may need to run manually:")
+		fmt.Printf("   sudo -u postgres psql -c \"ALTER USER %s WITH PASSWORD 'your_password';\"\n", user)
+	}
+
+	fmt.Println("✅ Remote access enabled for PostgreSQL")
+	fmt.Printf("   Listening on: 0.0.0.0:5432 (from %s)\n", cidrAddress)
+	fmt.Printf("   User '%s' can connect from: psql -U %s -h <server-ip> -d postgres\n", user, user)
+}
+
+func disablePostgreSQLRemoteAccessWithArgs(user string) {
+	matches, _ := exec.Command("bash", "-c", "ls /etc/postgresql/*/main/postgresql.conf 2>/dev/null | head -1").Output()
+	if len(matches) == 0 {
+		fmt.Println("❌ PostgreSQL configuration file not found")
+		return
+	}
+
+	configFile := strings.TrimSpace(string(matches))
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "listen_addresses = '*'") {
+		content = strings.ReplaceAll(content, "listen_addresses = '*'", "#listen_addresses = 'localhost'")
+	}
+
+	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
+		fmt.Printf("❌ Error writing config: %v\n", err)
+		return
+	}
+
+	if err := exec.Command("systemctl", "restart", "postgresql").Run(); err != nil {
+		fmt.Printf("❌ Error restarting PostgreSQL: %v\n", err)
+		return
+	}
+
+	fmt.Printf("✅ Remote access disabled for PostgreSQL (localhost only)\n")
+	fmt.Printf("   User '%s' - remote connections revoked\n", user)
+}
+
+func checkPostgreSQLRemoteAccessStatus() {
+	matches, _ := exec.Command("bash", "-c", "ls /etc/postgresql/*/main/postgresql.conf 2>/dev/null | head -1").Output()
+	if len(matches) == 0 {
+		fmt.Println("❌ PostgreSQL configuration file not found")
+		return
+	}
+
+	configFile := strings.TrimSpace(string(matches))
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		fmt.Printf("❌ Error reading config: %v\n", err)
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "listen_addresses = '*'") {
+		fmt.Println("🔓 Remote access is ENABLED for PostgreSQL")
+		fmt.Println("   Any client can connect if they have valid credentials")
+	} else {
+		fmt.Println("🔒 Remote access is DISABLED for PostgreSQL")
+		fmt.Println("   Only localhost connections are allowed")
+	}
+}
+
+
 func init() {
 	rootCmd.AddCommand(systemCmd)
 	systemCmd.AddCommand(reloadCmd)
 	systemCmd.AddCommand(validateCmd)
 	systemCmd.AddCommand(cleanupCmd)
 	systemCmd.AddCommand(statusCmd)
+	systemCmd.AddCommand(remoteAccessCmd)
+
+	// Add remote-access subcommands
+	remoteAccessCmd.AddCommand(remoteAccessEnableCmd)
+	remoteAccessCmd.AddCommand(remoteAccessDisableCmd)
+	remoteAccessCmd.AddCommand(remoteAccessStatusCmd)
 
 	// Add quiet flag to system commands
 	reloadCmd.Flags().Bool("quiet", false, "Suppress output")

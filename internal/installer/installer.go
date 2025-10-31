@@ -606,6 +606,50 @@ Listen %d
 	fmt.Printf("✅ Nginx installed successfully on port %d (mode: %s)\n", port, mode)
 }
 
+// InstallNginxVersion installs a specific version of Nginx or the latest if version is empty
+func InstallNginxVersion(version string) {
+	if version == "" {
+		InstallNginx()
+		return
+	}
+
+	fmt.Printf("📦 Installing Nginx version %s...\n", version)
+
+	if err := runCommand("apt", "update"); err != nil {
+		fmt.Printf("Error updating package list: %v\n", err)
+		return
+	}
+
+	pkg := fmt.Sprintf("nginx=%s*", version)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runCommand("apt", "install", "-y", pkg)
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			fmt.Printf("⚠️  Error installing Nginx %s: %v\n", version, err)
+			return
+		}
+	case <-time.After(5 * time.Minute):
+		fmt.Println("⚠️  Installation timed out after 5 minutes")
+		return
+	}
+
+	configureNginx()
+	runCommand("systemctl", "enable", "nginx")
+	runCommand("systemctl", "start", "nginx")
+	
+	// Update config to mark Nginx as installed and configured
+	if err := UpdateServerConfig("nginx", true, 80, "standalone"); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
+	}
+	
+	fmt.Printf("✅ Nginx %s installed successfully\n", version)
+}
+
 // InstallApache installs and configures Apache
 func InstallApache() {
 	fmt.Println("📦 Installing Apache...")
@@ -681,6 +725,50 @@ func InstallApache() {
 	} else {
 		fmt.Printf("✅ Apache installed successfully on port %d (mode: standalone)\n", port)
 	}
+}
+
+// InstallApacheVersion installs a specific version of Apache or the latest if version is empty
+func InstallApacheVersion(version string) {
+	if version == "" {
+		InstallApache()
+		return
+	}
+
+	fmt.Printf("📦 Installing Apache version %s...\n", version)
+
+	if err := runCommand("apt", "update"); err != nil {
+		fmt.Printf("Error updating package list: %v\n", err)
+		return
+	}
+
+	pkg := fmt.Sprintf("apache2=%s*", version)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runCommand("apt", "install", "-y", pkg)
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			fmt.Printf("⚠️  Error installing Apache %s: %v\n", version, err)
+			return
+		}
+	case <-time.After(5 * time.Minute):
+		fmt.Println("⚠️  Installation timed out after 5 minutes")
+		return
+	}
+
+	configureApache()
+	runCommand("systemctl", "enable", "apache2")
+	runCommand("systemctl", "start", "apache2")
+	
+	// Update config to mark Apache as installed and configured
+	if err := UpdateServerConfig("apache", true, 8080, "standalone"); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
+	}
+	
+	fmt.Printf("✅ Apache %s installed successfully\n", version)
 }
 
 // InstallMySQL installs MySQL server
@@ -827,6 +915,11 @@ func InstallMySQL() {
 	// Enable on boot
 	if err := runCommand("systemctl", "enable", "mysql"); err != nil {
 		fmt.Printf("Error enabling MySQL: %v\n", err)
+	}
+
+	// Update config to mark MySQL as installed and configured
+	if err := UpdateServerConfig("mysql", true, 3306, "backend"); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
 
 	fmt.Println("✅ MySQL installed successfully")
@@ -1084,6 +1177,11 @@ func InstallPostgreSQLVersion(version string) {
 		fmt.Printf("Error enabling PostgreSQL: %v\n", err)
 	}
 
+	// Update config to mark PostgreSQL as installed and configured
+	if err := UpdateServerConfig("postgresql", true, 5432, "backend"); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
+	}
+
 	if version == "" {
 		fmt.Println("✅ PostgreSQL installed successfully")
 	} else {
@@ -1287,6 +1385,11 @@ func InstallMySQLVersion(version string) {
 		fmt.Printf("Error enabling MySQL: %v\n", err)
 	}
 	
+	// Update config to mark MySQL as installed and configured
+	if err := UpdateServerConfig("mysql", true, 3306, "backend"); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
+	}
+	
 	fmt.Printf("✅ MySQL %s installed successfully\n", version)
 }
 
@@ -1404,6 +1507,11 @@ func InstallMariaDBVersion(version string) {
 	
 	if err := runCommand("systemctl", "enable", "mariadb"); err != nil {
 		fmt.Printf("Error enabling MariaDB: %v\n", err)
+	}
+	
+	// Update config to mark MariaDB as installed and configured
+	if err := UpdateServerConfig("mariadb", true, 3306, "backend"); err != nil {
+		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
 	
 	fmt.Printf("✅ MariaDB %s installed successfully\n", version)
@@ -2184,3 +2292,76 @@ func UpdateServerConfig(serverName string, installed bool, port int, mode string
 
 	return cfg.Save()
 }
+
+// ComponentStatusSummary is a small struct returned to CLI status/menu
+type ComponentStatusSummary struct {
+	ConfigInstalled bool
+	DpkgInstalled   bool
+	ServiceRunning  bool
+}
+
+// GetComponentsStatus returns status info for all known components
+func GetComponentsStatus() map[string]ComponentStatusSummary {
+	results := make(map[string]ComponentStatusSummary)
+	cfg, _ := LoadOrCreateConfig()
+
+	for name, comp := range components {
+		cfgInstalled := false
+		if cfg != nil {
+			cfgInstalled = cfg.IsInstalled(name)
+		}
+
+		dpkgInstalled := false
+		// component.CheckCmd uses dpkg -l; reuse isPackageInstalled when possible
+		if len(comp.CheckCmd) == 3 && comp.CheckCmd[0] == "dpkg" && comp.CheckCmd[1] == "-l" {
+			pkg := comp.CheckCmd[2]
+			dpkgInstalled = isPackageInstalled(pkg)
+		} else {
+			// fallback: try running check command
+			cmd := exec.Command(comp.CheckCmd[0], comp.CheckCmd[1:]...)
+			if err := cmd.Run(); err == nil {
+				dpkgInstalled = true
+			}
+		}
+
+		running := false
+		if comp.ServiceName != "" {
+			running = isServiceActive(comp.ServiceName)
+		}
+
+		results[name] = ComponentStatusSummary{
+			ConfigInstalled: cfgInstalled,
+			DpkgInstalled:   dpkgInstalled,
+			ServiceRunning:  running,
+		}
+	}
+
+	return results
+}
+
+// GetPHPVersionsStatus returns status for all PHP versions
+func GetPHPVersionsStatus() map[string]ComponentStatusSummary {
+	results := make(map[string]ComponentStatusSummary)
+	
+	// Common PHP versions
+	phpVersions := []string{"5.6", "7.0", "7.1", "7.2", "7.3", "7.4", "8.0", "8.1", "8.2", "8.3", "8.4"}
+	
+	for _, version := range phpVersions {
+		packageName := fmt.Sprintf("php%s-fpm", version)
+		installed := isPackageInstalled(packageName)
+		
+		serviceName := fmt.Sprintf("php%s-fpm", version)
+		running := false
+		if installed {
+			running = isServiceActive(serviceName)
+		}
+		
+		results[fmt.Sprintf("php%s", version)] = ComponentStatusSummary{
+			DpkgInstalled:  installed,
+			ServiceRunning: running,
+		}
+	}
+	
+	return results
+}
+

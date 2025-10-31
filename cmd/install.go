@@ -22,18 +22,30 @@ var installAllCmd = &cobra.Command{
 }
 
 var installNginxCmd = &cobra.Command{
-	Use:   "nginx",
-	Short: "Install Nginx web server (port 80)",
+	Use:   "nginx [version]",
+	Short: "Install Nginx web server (port 80) with optional version",
+	Long:  `Install Nginx. Optionally specify a package version (e.g. 1.18, 1.20). Default: latest available.`,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		installer.InstallNginx()
+		version := ""
+		if len(args) > 0 {
+			version = args[0]
+		}
+		installer.InstallNginxVersion(version)
 	},
 }
 
 var installApacheCmd = &cobra.Command{
-	Use:   "apache",
-	Short: "Install Apache web server (port 8080)",
+	Use:   "apache [version]",
+	Short: "Install Apache web server (port 8080) with optional version",
+	Long:  `Install Apache. Optionally specify a package version (e.g. 2.4.41). Default: latest available.`,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		installer.InstallApache()
+		version := ""
+		if len(args) > 0 {
+			version = args[0]
+		}
+		installer.InstallApacheVersion(version)
 	},
 }
 
