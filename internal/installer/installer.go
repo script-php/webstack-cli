@@ -1587,6 +1587,9 @@ func UninstallNginx() {
 		return
 	}
 
+	// Clean up nginx includes directory used for modules like phpmyadmin, pgadmin, etc.
+	os.RemoveAll("/etc/nginx/includes")
+
 	// Update config
 	if err := UpdateServerConfig("nginx", false, 0, ""); err != nil {
 		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
@@ -1614,6 +1617,9 @@ func UninstallApache() {
 		fmt.Printf("❌ Error uninstalling Apache: %v\n", err)
 		return
 	}
+
+	// Clean up apache includes directory used for modules like phpmyadmin, pgadmin, etc.
+	os.RemoveAll("/etc/apache2/includes")
 
 	// Update config
 	if err := UpdateServerConfig("apache", false, 0, ""); err != nil {
@@ -1745,6 +1751,11 @@ func configureNginx() {
 		fmt.Printf("⚠️  Warning: Could not create nginx cache directory: %v\n", err)
 	}
 
+	// Create nginx includes directory for modules like phpmyadmin, pgadmin, etc.
+	if err := os.MkdirAll("/etc/nginx/includes", 0755); err != nil {
+		fmt.Printf("⚠️  Warning: Could not create nginx includes directory: %v\n", err)
+	}
+
 	// Create WebStack welcome directory
 	if err := os.MkdirAll("/var/www/webstack", 0755); err != nil {
 		fmt.Printf("⚠️  Warning: Could not create webstack welcome directory: %v\n", err)
@@ -1824,6 +1835,11 @@ func configureApache() {
 		}
 	}
 	fmt.Println("✅ Apache modules enabled")
+
+	// Create apache includes directory for modules like phpmyadmin, pgadmin, etc.
+	if err := os.MkdirAll("/etc/apache2/includes", 0755); err != nil {
+		fmt.Printf("⚠️  Warning: Could not create apache includes directory: %v\n", err)
+	}
 
 	// Determine Apache port based on whether Nginx is installed
 	apachePort, apacheMode := determineApachePort()
