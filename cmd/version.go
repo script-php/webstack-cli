@@ -47,7 +47,7 @@ func updateCLI(cmd *cobra.Command, args []string) {
 	fmt.Println("🔍 Checking for updates...")
 
 	// Get latest release from GitHub
-	resp, err := http.Get("https://api.github.com/repos/yourusername/webstack-cli/releases/latest")
+	resp, err := http.Get("https://api.github.com/repos/script-php/webstack/releases/latest")
 	if err != nil {
 		fmt.Printf("❌ Failed to check for updates: %v\n", err)
 		return
@@ -100,7 +100,7 @@ func downloadAndInstall(version string) error {
 		platform += ".exe"
 	}
 
-	downloadURL := fmt.Sprintf("https://github.com/yourusername/webstack-cli/releases/download/%s/webstack-%s", version, platform)
+	downloadURL := fmt.Sprintf("https://github.com/script-php/webstack/releases/download/%s/webstack-%s", version, platform)
 
 	fmt.Printf("📥 Downloading %s...\n", downloadURL)
 

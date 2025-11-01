@@ -319,19 +319,12 @@ func uninstallComponent(component Component) error {
 	if component.PackageName == "mysql-server" || component.PackageName == "mariadb-server" {
 		fmt.Println("🧹 Cleaning MySQL/MariaDB data directories...")
 		
-		// Remove all MySQL/MariaDB data directories completely
-		dirs := []string{
-			"/var/lib/mysql",
-			"/var/lib/mysql-8.0",      // MySQL 8.0 specific directory
-			"/var/lib/mysql-files",
-			"/var/log/mysql",
-			"/etc/mysql",
-		}
-		for _, dir := range dirs {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				fmt.Printf("⚠️  Could not remove %s: %v\n", dir, err)
-			}
-		}
+		// Remove all MySQL/MariaDB data directories using glob patterns
+		// This ensures we remove /var/lib/mysql, /var/lib/mysql-8.0, /var/lib/mysql-files, etc.
+		runCommandQuiet("bash", "-c", "rm -rf /var/lib/mysql*")      // Catches mysql, mysql-8.0, mysql-files, etc.
+		runCommandQuiet("bash", "-c", "rm -rf /var/log/mysql*")      // Catches mysql, mysql-files logs, etc.
+		runCommandQuiet("bash", "-c", "rm -rf /etc/mysql*")          // Catches mysql, mysqlrouter configs, etc.
+		runCommandQuiet("bash", "-c", "rm -rf /run/mysqld*")         // Catches mysqld, mysqld_safe, etc.
 		
 		// Clean package cache to prevent stale files
 		runCommandQuiet("apt", "clean")
@@ -342,18 +335,11 @@ func uninstallComponent(component Component) error {
 	if component.PackageName == "postgresql" {
 		fmt.Println("🧹 Cleaning PostgreSQL data directories...")
 		
-		// Remove all PostgreSQL data directories completely
-		dirs := []string{
-			"/var/lib/postgresql",
-			"/var/log/postgresql",
-			"/etc/postgresql",
-			"/run/postgresql",
-		}
-		for _, dir := range dirs {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				fmt.Printf("⚠️  Could not remove %s: %v\n", dir, err)
-			}
-		}
+		// Remove all PostgreSQL data directories using glob patterns
+		runCommandQuiet("bash", "-c", "rm -rf /var/lib/postgresql*")
+		runCommandQuiet("bash", "-c", "rm -rf /var/log/postgresql*")
+		runCommandQuiet("bash", "-c", "rm -rf /etc/postgresql*")
+		runCommandQuiet("bash", "-c", "rm -rf /run/postgresql*")
 		
 		// Clean package cache to prevent stale files
 		runCommandQuiet("apt", "clean")
@@ -839,20 +825,8 @@ func InstallMySQL() {
 	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	_ = purgeCmd.Run()
 	
-	// Remove ALL data and config directories (fresh start)
-	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
-	dirsToRemove := []string{
-		"/var/lib/mysql",
-		"/var/lib/mysql-8.0",
-		"/var/lib/mysql-files",
-		"/var/log/mysql",
-		"/etc/mysql",
-		"/run/mysqld",
-		"/run/mariadb",
-	}
-	for _, dir := range dirsToRemove {
-		os.RemoveAll(dir)
-	}
+	// Remove ALL data and config directories (fresh start) using glob patterns
+	cleanupMySQLMariaDBDirectories()
 	
 	// Clean apt cache to prevent conflicts
 	runCommandQuiet("apt", "clean")
@@ -994,20 +968,8 @@ func InstallMariaDB() {
 	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	_ = purgeCmd.Run()
 	
-	// Remove ALL data and config directories (fresh start)
-	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
-	dirsToRemove := []string{
-		"/var/lib/mysql",
-		"/var/lib/mysql-8.0",
-		"/var/lib/mysql-files",
-		"/var/log/mysql",
-		"/etc/mysql",
-		"/run/mysqld",
-		"/run/mariadb",
-	}
-	for _, dir := range dirsToRemove {
-		os.RemoveAll(dir)
-	}
+	// Remove ALL data and config directories (fresh start) using glob patterns
+	cleanupMySQLMariaDBDirectories()
 	
 	// Clean apt cache to prevent conflicts
 	runCommandQuiet("apt", "clean")
@@ -1310,19 +1272,8 @@ func InstallMySQLVersion(version string) {
 	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	_ = purgeCmd.Run()
 	
-	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
-	dirsToRemove := []string{
-		"/var/lib/mysql",
-		"/var/lib/mysql-8.0",
-		"/var/lib/mysql-files",
-		"/var/log/mysql",
-		"/etc/mysql",
-		"/run/mysqld",
-		"/run/mariadb",
-	}
-	for _, dir := range dirsToRemove {
-		os.RemoveAll(dir)
-	}
+	// Remove ALL data and config directories (fresh start) using glob patterns
+	cleanupMySQLMariaDBDirectories()
 	
 	runCommandQuiet("apt", "clean")
 	runCommandQuiet("apt", "autoclean")
@@ -1434,19 +1385,8 @@ func InstallMariaDBVersion(version string) {
 	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	_ = purgeCmd.Run()
 	
-	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
-	dirsToRemove := []string{
-		"/var/lib/mysql",
-		"/var/lib/mysql-8.0",
-		"/var/lib/mysql-files",
-		"/var/log/mysql",
-		"/etc/mysql",
-		"/run/mysqld",
-		"/run/mariadb",
-	}
-	for _, dir := range dirsToRemove {
-		os.RemoveAll(dir)
-	}
+	// Remove ALL data and config directories (fresh start) using glob patterns
+	cleanupMySQLMariaDBDirectories()
 	
 	runCommandQuiet("apt", "clean")
 	runCommandQuiet("apt", "autoclean")
@@ -1722,16 +1662,37 @@ func UninstallPHP(version string) {
 }
 
 
-// Helper functions
+// cleanupMySQLMariaDBDirectories removes all MySQL/MariaDB related directories using glob patterns
+func cleanupMySQLMariaDBDirectories() {
+	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
+	
+	// Use bash glob patterns to catch all variants (* wildcards)
+	// This ensures we remove /var/lib/mysql, /var/lib/mysql-8.0, /var/lib/mysql-files, etc.
+	cleanupPatterns := []string{
+		"/var/lib/mysql*",      // Catches mysql, mysql-8.0, mysql-files, etc.
+		"/var/log/mysql*",      // Catches mysql, mysql-files logs, etc.
+		"/etc/mysql*",          // Catches mysql, mysqlrouter configs, etc.
+		"/run/mysqld*",         // Catches mysqld, mysqld_safe, etc.
+		"/run/mariadb*",        // Catches mariadb, mariadb-init, etc.
+	}
+	
+	for _, pattern := range cleanupPatterns {
+		// Use bash glob expansion to handle wildcards properly
+		runCommandQuiet("bash", "-c", fmt.Sprintf("rm -rf %s 2>/dev/null || true", pattern))
+	}
+}
+
+// Helper function at line around where runCommand is defined
+
+func runCommandQuiet(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	return cmd.Run()
+}
+
 func runCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func runCommandQuiet(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
 	return cmd.Run()
 }
 
