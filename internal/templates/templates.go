@@ -4,7 +4,7 @@ import (
 	"embed"
 )
 
-//go:embed nginx/* apache/* mysql/* php-fpm/* error/*
+//go:embed nginx/* apache/* mysql/* php-fpm/* error/* dns/*
 var FS embed.FS
 
 // GetTemplate reads a template file from the embedded filesystem
@@ -35,4 +35,9 @@ func GetPHPTemplate(filename string) ([]byte, error) {
 // GetErrorTemplate reads an error page template
 func GetErrorTemplate(filename string) ([]byte, error) {
 	return GetTemplate("error/" + filename)
+}
+
+// GetDNSTemplate reads a DNS template
+func GetDNSTemplate(filename string) ([]byte, error) {
+	return GetTemplate("dns/" + filename)
 }

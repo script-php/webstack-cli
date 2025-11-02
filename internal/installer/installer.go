@@ -63,6 +63,12 @@ var components = map[string]Component{
 		PackageName: "postgresql postgresql-contrib",
 		ServiceName: "postgresql",
 	},
+	"bind9": {
+		Name:        "Bind9 DNS",
+		CheckCmd:    []string{"dpkg", "-l", "bind9"},
+		PackageName: "bind9 bind9-utils bind9-doc",
+		ServiceName: "bind9",
+	},
 }
 
 // checkComponentStatus checks if a component is already installed
