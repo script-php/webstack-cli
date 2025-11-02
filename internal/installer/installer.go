@@ -552,7 +552,7 @@ Listen %d
 					"ApachePort": apachePort,
 				})
 				
-				if err := ioutil.WriteFile("/etc/apache2/sites-available/001-default.conf", []byte(buf.String()), 0644); err == nil {
+				if err := ioutil.WriteFile("/etc/apache2/sites-available/000-default.conf", []byte(buf.String()), 0644); err == nil {
 					fmt.Println("✅ Apache default VirtualHost updated for port 8080")
 				}
 			}
@@ -1860,9 +1860,9 @@ Listen %d
 			})
 			
 			if err := os.MkdirAll("/etc/apache2/sites-available", 0755); err == nil {
-				if err := ioutil.WriteFile("/etc/apache2/sites-available/001-default.conf", []byte(buf.String()), 0644); err == nil {
+				if err := ioutil.WriteFile("/etc/apache2/sites-available/000-default.conf", []byte(buf.String()), 0644); err == nil {
 					// Enable the default site
-					runCommandQuiet("a2ensite", "001-default.conf")
+					runCommandQuiet("a2ensite", "000-default.conf")
 					fmt.Println("✅ Default VirtualHost deployed")
 				}
 			}
