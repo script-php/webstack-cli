@@ -69,6 +69,30 @@ var components = map[string]Component{
 		PackageName: "bind9 bind9-utils bind9-doc",
 		ServiceName: "bind9",
 	},
+	"exim4": {
+		Name:        "Exim4 SMTP",
+		CheckCmd:    []string{"dpkg", "-l", "exim4"},
+		PackageName: "exim4 exim4-daemon-light",
+		ServiceName: "exim4",
+	},
+	"dovecot": {
+		Name:        "Dovecot IMAP/POP3",
+		CheckCmd:    []string{"dpkg", "-l", "dovecot-core"},
+		PackageName: "dovecot-core dovecot-imapd dovecot-pop3d dovecot-sieve",
+		ServiceName: "dovecot",
+	},
+	"clamav": {
+		Name:        "ClamAV Antivirus",
+		CheckCmd:    []string{"dpkg", "-l", "clamav-daemon"},
+		PackageName: "clamav clamav-daemon clamav-freshclam",
+		ServiceName: "clamav-daemon",
+	},
+	"spamassassin": {
+		Name:        "SpamAssassin",
+		CheckCmd:    []string{"dpkg", "-l", "spamassassin"},
+		PackageName: "spamassassin spamc",
+		ServiceName: "spamassassin",
+	},
 }
 
 // checkComponentStatus checks if a component is already installed
