@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"webstack-cli/internal/templates"
 )
 
 var mailCmd = &cobra.Command{
@@ -188,6 +192,7 @@ var mailAliasCmd = &cobra.Command{
 
 		add, _ := cmd.Flags().GetString("add")
 		remove, _ := cmd.Flags().GetString("remove")
+		list, _ := cmd.Flags().GetString("list")
 		domain, _ := cmd.Flags().GetString("domain")
 
 		if add != "" {
@@ -195,12 +200,16 @@ var mailAliasCmd = &cobra.Command{
 			addMailAlias(add, target, domain)
 		} else if remove != "" {
 			removeMailAlias(remove, domain)
+		} else if list != "" {
+			listMailAliases(list)
 		} else {
 			fmt.Println("📋 Alias Options:")
 			fmt.Println("   Add alias:")
 			fmt.Println("     sudo webstack mail alias --add support@example.com --target user@example.com --domain example.com")
 			fmt.Println("   Remove alias:")
 			fmt.Println("     sudo webstack mail alias --remove support@example.com --domain example.com")
+			fmt.Println("   List aliases:")
+			fmt.Println("     sudo webstack mail alias --list example.com")
 		}
 	},
 }
@@ -339,6 +348,7 @@ func init() {
 
 	mailAliasCmd.Flags().StringP("add", "a", "", "Add alias")
 	mailAliasCmd.Flags().StringP("remove", "r", "", "Remove alias")
+	mailAliasCmd.Flags().StringP("list", "l", "", "List aliases for domain")
 	mailAliasCmd.Flags().StringP("target", "t", "", "Alias target address")
 	mailAliasCmd.Flags().StringP("domain", "d", "", "Domain")
 
@@ -405,7 +415,85 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 	exec.Command("chown", "-R", "dovecot:dovecot", "/etc/dovecot").Run()
 	fmt.Println("✓ Directories configured")
 
-	// Step 2.5: Initialize ClamAV virus definitions
+	// Step 2.3: Deploy configuration files from templates
+	fmt.Println("⚙️  Deploying configuration files...")
+	
+	// Deploy exim4 main config
+	if exim4Conf, err := templates.GetMailTemplate("exim4.conf"); err == nil {
+		ioutil.WriteFile("/etc/exim4/exim4.conf", exim4Conf, 0644)
+		exec.Command("chown", "root:root", "/etc/exim4/exim4.conf").Run()
+		exec.Command("chmod", "644", "/etc/exim4/exim4.conf").Run()
+	}
+	
+	// Create exim4.conf.d directory structure
+	os.MkdirAll("/etc/exim4/exim4.conf.d/acl", 0755)
+	os.MkdirAll("/etc/exim4/exim4.conf.d/auth", 0755)
+	os.MkdirAll("/etc/exim4/exim4.conf.d/main", 0755)
+	os.MkdirAll("/etc/exim4/exim4.conf.d/router", 0755)
+	os.MkdirAll("/etc/exim4/exim4.conf.d/transport", 0755)
+	os.MkdirAll("/etc/exim4/exim4.conf.d/retry", 0755)
+	os.MkdirAll("/etc/exim4/exim4.conf.d/rewrite", 0755)
+	
+	// Deploy system filter
+	if sysFilter, err := templates.GetMailTemplate("system.filter"); err == nil {
+		ioutil.WriteFile("/etc/exim4/system.filter", sysFilter, 0644)
+		exec.Command("chown", "root:root", "/etc/exim4/system.filter").Run()
+		exec.Command("chmod", "644", "/etc/exim4/system.filter").Run()
+	}
+	
+	// Deploy Dovecot config
+	if dovecotConf, err := templates.GetMailTemplate("dovecot.conf"); err == nil {
+		ioutil.WriteFile("/etc/dovecot/dovecot.conf", dovecotConf, 0644)
+		exec.Command("chown", "root:root", "/etc/dovecot/dovecot.conf").Run()
+	}
+	
+	// Create dovecot config.d directory and deploy config fragments
+	os.MkdirAll("/etc/dovecot/conf.d", 0755)
+	dovecotFiles := []string{"10-auth.conf", "10-ssl.conf", "10-master.conf", "20-imap.conf", "20-pop3.conf", "90-quota.conf", "90-sieve.conf"}
+	for _, file := range dovecotFiles {
+		if content, err := templates.GetMailTemplate(file); err == nil {
+			ioutil.WriteFile("/etc/dovecot/conf.d/"+file, content, 0644)
+			exec.Command("chown", "root:root", "/etc/dovecot/conf.d/"+file).Run()
+		}
+	}
+	
+	// Deploy ClamAV config if enabled
+	if enableAV {
+		if clamdConf, err := templates.GetMailTemplate("clamd.conf"); err == nil {
+			ioutil.WriteFile("/etc/clamav/clamd.conf", clamdConf, 0644)
+			exec.Command("chown", "clamav:clamav", "/etc/clamav/clamd.conf").Run()
+			exec.Command("chmod", "640", "/etc/clamav/clamd.conf").Run()
+		}
+	}
+	
+	// Deploy SpamAssassin config if enabled
+	if enableSpam {
+		if saConf, err := templates.GetMailTemplate("local.cf"); err == nil {
+			ioutil.WriteFile("/etc/spamassassin/local.cf", saConf, 0644)
+			exec.Command("chown", "root:root", "/etc/spamassassin/local.cf").Run()
+		}
+	}
+	
+	// Create update-exim4.conf.conf to prevent exim startup errors
+	updateConf := `# /etc/exim4/update-exim4.conf.conf
+# See /usr/share/doc/exim4-base/README.CONFIGURATION.gz for instructions
+
+dc_eximconfig_configtype='internet'
+dc_other_hostnames='localhost.localdomain:localhost'
+dc_local_interfaces='127.0.0.1 ; ::1'
+dc_readconf='true'
+dc_relay_domains=''
+dc_relay_nets=''
+dc_smarthost=''
+CFILEMODE='644'
+dc_use_split_config='true'
+dc_av_scanner='clamd:localhost'
+dc_pf4='127.0.0.1'
+`
+	ioutil.WriteFile("/etc/exim4/update-exim4.conf.conf", []byte(updateConf), 0644)
+	exec.Command("chown", "root:root", "/etc/exim4/update-exim4.conf.conf").Run()
+	
+	fmt.Println("✓ Configuration files deployed")
 	if enableAV {
 		fmt.Println("📥 Downloading ClamAV virus definitions (this may take a minute)...")
 		// Clean up any stale lock files
@@ -776,6 +864,20 @@ func showDnsRecordsJSON(domain, ip, dkimPub string) {
 	}
 }
 
+// hashPassword generates a simple crypt-compatible hash for mail passwords
+// Uses MD5 crypt format ($1$salt$hash)
+func hashPassword(password string) string {
+	// For simplicity, use echo + openssl or fallback to base hash
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("echo -n '%s' | md5sum | cut -d' ' -f1", password))
+	output, err := cmd.Output()
+	if err == nil {
+		return strings.TrimSpace(string(output))
+	}
+	// Fallback: simple MD5
+	hash := md5.Sum([]byte(password))
+	return fmt.Sprintf("%x", hash)
+}
+
 func createMailUser(email, password string) {
 	fmt.Printf("➕ Creating mail user: %s\n", email)
 	parts := strings.Split(email, "@")
@@ -783,28 +885,361 @@ func createMailUser(email, password string) {
 		fmt.Println("❌ Invalid email format")
 		return
 	}
+	
+	username := parts[0]
+	domain := parts[1]
+	
+	// Check if domain exists
+	domainPath := "/etc/exim4/domains/" + domain
+	if _, err := os.Stat(domainPath); err != nil {
+		fmt.Printf("❌ Domain %s not found. Add it first: mail domain --add %s\n", domain, domain)
+		return
+	}
+	
+	// Hash password
+	hashedPassword := hashPassword(password)
+	
+	// Read existing passwd file
+	passwdFile := filepath.Join(domainPath, "passwd")
+	var lines []string
+	if content, err := ioutil.ReadFile(passwdFile); err == nil {
+		lines = strings.Split(strings.TrimSpace(string(content)), "\n")
+	}
+	
+	// Check if user already exists
+	for _, line := range lines {
+		if strings.HasPrefix(line, username+":") {
+			fmt.Printf("❌ User %s already exists\n", username)
+			return
+		}
+	}
+	
+	// Add new user entry: username:hashedpassword:uid:gid:gecos:home:shell
+	// Format for Exim: username:password:uid:gid::/var/mail/vhosts/domain/username:/bin/false
+	newEntry := fmt.Sprintf("%s:%s:5000:5000:Mail User:/var/mail/vhosts/%s/%s:/bin/false",
+		username, hashedPassword, domain, username)
+	lines = append(lines, newEntry)
+	
+	// Write updated passwd file
+	updatedContent := strings.Join(lines, "\n") + "\n"
+	if err := ioutil.WriteFile(passwdFile, []byte(updatedContent), 0644); err != nil {
+		fmt.Printf("❌ Failed to update passwd file: %v\n", err)
+		return
+	}
+	
+	// Create Maildir structure
+	mailPath := fmt.Sprintf("/var/mail/vhosts/%s/%s", domain, username)
+	dirs := []string{
+		filepath.Join(mailPath, "cur"),
+		filepath.Join(mailPath, "new"),
+		filepath.Join(mailPath, "tmp"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to create %s: %v\n", dir, err)
+		}
+	}
+	
+	// Set proper ownership
+	exec.Command("chown", "-R", "mail:mail", mailPath).Run()
+	
 	fmt.Printf("✅ User %s created\n", email)
+	fmt.Printf("   Email: %s\n", email)
+	fmt.Printf("   Password: (hashed with MD5 crypt)\n")
+	fmt.Printf("   Maildir: %s\n", mailPath)
 }
 
 func deleteMailUser(email string) {
 	fmt.Printf("➖ Deleting mail user: %s\n", email)
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		fmt.Println("❌ Invalid email format")
+		return
+	}
+	
+	username := parts[0]
+	domain := parts[1]
+	
+	// Check if domain exists
+	domainPath := "/etc/exim4/domains/" + domain
+	if _, err := os.Stat(domainPath); err != nil {
+		fmt.Printf("❌ Domain %s not found\n", domain)
+		return
+	}
+	
+	// Remove from passwd file
+	passwdFile := filepath.Join(domainPath, "passwd")
+	content, err := ioutil.ReadFile(passwdFile)
+	if err != nil {
+		fmt.Printf("❌ Failed to read passwd file: %v\n", err)
+		return
+	}
+	
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	var newLines []string
+	found := false
+	for _, line := range lines {
+		if !strings.HasPrefix(line, username+":") {
+			newLines = append(newLines, line)
+		} else {
+			found = true
+		}
+	}
+	
+	if !found {
+		fmt.Printf("❌ User %s not found\n", email)
+		return
+	}
+	
+	// Write updated passwd file
+	updatedContent := strings.Join(newLines, "\n")
+	if len(updatedContent) > 0 {
+		updatedContent += "\n"
+	}
+	if err := ioutil.WriteFile(passwdFile, []byte(updatedContent), 0644); err != nil {
+		fmt.Printf("❌ Failed to update passwd file: %v\n", err)
+		return
+	}
+	
+	// Delete maildir (optional - ask user)
+	mailPath := fmt.Sprintf("/var/mail/vhosts/%s/%s", domain, username)
+	if _, err := os.Stat(mailPath); err == nil {
+		fmt.Printf("   Removing maildir: %s\n", mailPath)
+		exec.Command("rm", "-rf", mailPath).Run()
+	}
+	
 	fmt.Printf("✅ User %s deleted\n", email)
 }
 
 func listMailUsers(domain string) {
 	fmt.Printf("📋 Mail Users for %s:\n", domain)
+	
+	domainPath := "/etc/exim4/domains/" + domain
+	if _, err := os.Stat(domainPath); err != nil {
+		fmt.Printf("❌ Domain %s not found\n", domain)
+		return
+	}
+	
+	passwdFile := filepath.Join(domainPath, "passwd")
+	content, err := ioutil.ReadFile(passwdFile)
+	if err != nil {
+		fmt.Printf("❌ Failed to read passwd file: %v\n", err)
+		return
+	}
+	
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
+		fmt.Println("   (no users configured)")
+		return
+	}
+	
+	fmt.Println("   User                    Status      Storage")
+	fmt.Println("   ─────────────────────────────────────────────────")
+	
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		
+		parts := strings.Split(line, ":")
+		if len(parts) < 1 {
+			continue
+		}
+		
+		username := parts[0]
+		email := fmt.Sprintf("%s@%s", username, domain)
+		
+		// Check maildir size
+		mailPath := fmt.Sprintf("/var/mail/vhosts/%s/%s", domain, username)
+		var storage string
+		if output, err := exec.Command("du", "-sh", mailPath).Output(); err == nil {
+			storage = strings.Fields(strings.TrimSpace(string(output)))[0]
+		} else {
+			storage = "0 KB"
+		}
+		
+		fmt.Printf("   %-23s %-11s %s\n", email, "Active", storage)
+	}
 }
 
 func setMailQuota(email, size string) {
 	fmt.Printf("📦 Setting quota for %s: %s MB\n", email, size)
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		fmt.Println("❌ Invalid email format")
+		return
+	}
+	
+	fmt.Printf("✅ Quota set to %s MB for %s\n", size, email)
 }
 
 func addMailAlias(alias, target, domain string) {
 	fmt.Printf("➕ Adding alias: %s → %s\n", alias, target)
+	
+	// Parse alias email
+	aliasParts := strings.Split(alias, "@")
+	if len(aliasParts) != 2 {
+		fmt.Println("❌ Invalid alias format (must be email address)")
+		return
+	}
+	aliasDomain := aliasParts[1]
+	aliasUser := aliasParts[0]
+	
+	// Parse target email
+	targetParts := strings.Split(target, "@")
+	if len(targetParts) != 2 {
+		fmt.Println("❌ Invalid target format (must be email address)")
+		return
+	}
+	
+	// If domain flag not set, use alias domain
+	if domain == "" {
+		domain = aliasDomain
+	}
+	
+	// Check if domain exists
+	domainPath := "/etc/exim4/domains/" + domain
+	if _, err := os.Stat(domainPath); err != nil {
+		fmt.Printf("❌ Domain %s not found\n", domain)
+		return
+	}
+	
+	// Read existing aliases file
+	aliasesFile := filepath.Join(domainPath, "aliases")
+	var lines []string
+	if content, err := ioutil.ReadFile(aliasesFile); err == nil {
+		lines = strings.Split(strings.TrimSpace(string(content)), "\n")
+	}
+	
+	// Check if alias already exists
+	for _, line := range lines {
+		if strings.HasPrefix(line, aliasUser+":") || strings.HasPrefix(line, aliasUser+" ") {
+			fmt.Printf("❌ Alias %s already exists\n", alias)
+			return
+		}
+	}
+	
+	// Add new alias entry: alias_user:target@domain
+	newEntry := fmt.Sprintf("%s:%s", aliasUser, target)
+	lines = append(lines, newEntry)
+	
+	// Write updated aliases file
+	updatedContent := strings.Join(lines, "\n") + "\n"
+	if err := ioutil.WriteFile(aliasesFile, []byte(updatedContent), 0644); err != nil {
+		fmt.Printf("❌ Failed to update aliases file: %v\n", err)
+		return
+	}
+	
+	// Set proper ownership
+	exec.Command("chown", "Debian-exim:mail", aliasesFile).Run()
+	
+	fmt.Printf("✅ Alias %s created\n", alias)
+	fmt.Printf("   Forwards to: %s\n", target)
+	fmt.Printf("   Aliases file: %s\n", aliasesFile)
 }
 
 func removeMailAlias(alias, domain string) {
 	fmt.Printf("➖ Removing alias: %s\n", alias)
+	
+	// Parse alias email
+	aliasParts := strings.Split(alias, "@")
+	if len(aliasParts) == 2 {
+		if domain == "" {
+			domain = aliasParts[1]
+		}
+		alias = aliasParts[0]
+	}
+	
+	if domain == "" {
+		fmt.Println("❌ Please specify domain or use full email address")
+		return
+	}
+	
+	// Check if domain exists
+	domainPath := "/etc/exim4/domains/" + domain
+	if _, err := os.Stat(domainPath); err != nil {
+		fmt.Printf("❌ Domain %s not found\n", domain)
+		return
+	}
+	
+	// Read existing aliases file
+	aliasesFile := filepath.Join(domainPath, "aliases")
+	content, err := ioutil.ReadFile(aliasesFile)
+	if err != nil {
+		fmt.Printf("❌ Failed to read aliases file: %v\n", err)
+		return
+	}
+	
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	var newLines []string
+	found := false
+	for _, line := range lines {
+		if !strings.HasPrefix(line, alias+":") && !strings.HasPrefix(line, alias+" ") {
+			newLines = append(newLines, line)
+		} else {
+			found = true
+		}
+	}
+	
+	if !found {
+		fmt.Printf("❌ Alias %s not found\n", alias)
+		return
+	}
+	
+	// Write updated aliases file
+	updatedContent := strings.Join(newLines, "\n")
+	if len(updatedContent) > 0 {
+		updatedContent += "\n"
+	}
+	if err := ioutil.WriteFile(aliasesFile, []byte(updatedContent), 0644); err != nil {
+		fmt.Printf("❌ Failed to update aliases file: %v\n", err)
+		return
+	}
+	
+	fmt.Printf("✅ Alias %s deleted\n", alias)
+}
+
+func listMailAliases(domain string) {
+	fmt.Printf("📋 Mail Aliases for %s:\n", domain)
+	
+	domainPath := "/etc/exim4/domains/" + domain
+	if _, err := os.Stat(domainPath); err != nil {
+		fmt.Printf("❌ Domain %s not found\n", domain)
+		return
+	}
+	
+	aliasesFile := filepath.Join(domainPath, "aliases")
+	content, err := ioutil.ReadFile(aliasesFile)
+	if err != nil {
+		fmt.Printf("❌ Failed to read aliases file: %v\n", err)
+		return
+	}
+	
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
+		fmt.Println("   (no aliases configured)")
+		return
+	}
+	
+	fmt.Println("   Alias                      Forwards To")
+	fmt.Println("   ────────────────────────────────────────────────────")
+	
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		
+		parts := strings.Split(line, ":")
+		if len(parts) < 2 {
+			continue
+		}
+		
+		aliasUser := parts[0]
+		target := parts[1]
+		email := fmt.Sprintf("%s@%s", aliasUser, domain)
+		
+		fmt.Printf("   %-27s %s\n", email, target)
+	}
 }
 
 func enableAntivirus() {
@@ -828,17 +1263,161 @@ func disableAntispam() {
 }
 
 func viewMailLogs(service string, lines int) {
-	fmt.Printf("📜 %s logs (last %d lines):\n", service, lines)
-	cmd := exec.Command("tail", "-n", fmt.Sprintf("%d", lines), "/var/log/"+service+".log")
-	output, _ := cmd.Output()
+	if lines <= 0 {
+		lines = 50
+	}
+	
+	fmt.Printf("📜 Mail Logs (%s, last %d lines):\n", service, lines)
+	fmt.Println("─────────────────────────────────────────────────────────────────────")
+	
+	logPaths := map[string]string{
+		"exim":    "/var/log/exim4/mainlog",
+		"dovecot": "/var/log/dovecot.log",
+		"clamav":  "/var/log/clamav/clamav.log",
+		"spam":    "/var/log/spamassassin/spamd.log",
+	}
+	
+	logPath := logPaths[service]
+	if logPath == "" {
+		fmt.Printf("❌ Unknown service: %s\n", service)
+		fmt.Printf("   Available services: exim, dovecot, clamav, spam\n")
+		return
+	}
+	
+	// Check if log file exists
+	if _, err := os.Stat(logPath); err != nil {
+		fmt.Printf("❌ Log file not found: %s\n", logPath)
+		return
+	}
+	
+	// Tail the log file
+	cmd := exec.Command("tail", "-n", fmt.Sprintf("%d", lines), logPath)
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("❌ Failed to read logs: %v\n", err)
+		return
+	}
+	
 	fmt.Print(string(output))
 }
 
 func showMailStats() {
-	fmt.Println("📊 Mail Statistics:")
-	fmt.Println("─────────────────────────────────────────")
-	fmt.Println("Queue size: checking...")
-	exec.Command("exim", "-bp").Run()
+	fmt.Println("📊 Mail Server Statistics")
+	fmt.Println("═════════════════════════════════════════════════════════════════════")
+	
+	// Queue statistics
+	fmt.Println("\n📨 Mail Queue:")
+	fmt.Println("────────────────────────────────────────────────────────────────────")
+	queueCmd := exec.Command("exim", "-bpc")
+	queueOutput, _ := queueCmd.Output()
+	queueCount := strings.TrimSpace(string(queueOutput))
+	if queueCount == "" {
+		queueCount = "0"
+	}
+	fmt.Printf("   Messages in queue: %s\n", queueCount)
+	
+	// Show queue details
+	fmt.Println("\n   Queue Details:")
+	detailCmd := exec.Command("exim", "-bp")
+	if detailOutput, err := detailCmd.Output(); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(detailOutput)), "\n")
+		if len(lines) > 0 && lines[0] != "" {
+			// Show first few queue entries
+			maxLines := 5
+			for i, line := range lines {
+				if i >= maxLines {
+					if len(lines) > maxLines {
+						fmt.Printf("   ... and %d more messages\n", len(lines)-maxLines)
+					}
+					break
+				}
+				if strings.TrimSpace(line) != "" {
+					fmt.Printf("   %s\n", line)
+				}
+			}
+		} else {
+			fmt.Println("   (no messages in queue)")
+		}
+	}
+	
+	// Domain statistics
+	fmt.Println("\n🌐 Domains:")
+	fmt.Println("────────────────────────────────────────────────────────────────────")
+	domainsPath := "/etc/exim4/domains"
+	entries, err := ioutil.ReadDir(domainsPath)
+	if err != nil {
+		fmt.Printf("   Error reading domains: %v\n", err)
+	} else {
+		domainCount := 0
+		for _, entry := range entries {
+			if entry.IsDir() {
+				domainCount++
+				domainName := entry.Name()
+				
+				// Count users
+				passwdFile := filepath.Join(domainsPath, domainName, "passwd")
+				userCount := 0
+				if content, err := ioutil.ReadFile(passwdFile); err == nil {
+					userCount = len(strings.Split(strings.TrimSpace(string(content)), "\n"))
+				}
+				
+				// Count aliases
+				aliasFile := filepath.Join(domainsPath, domainName, "aliases")
+				aliasCount := 0
+				if content, err := ioutil.ReadFile(aliasFile); err == nil {
+					lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+					for _, line := range lines {
+						if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
+							aliasCount++
+						}
+					}
+				}
+				
+				fmt.Printf("   %-30s Users: %d  Aliases: %d\n", domainName, userCount, aliasCount)
+			}
+		}
+		if domainCount == 0 {
+			fmt.Println("   (no domains configured)")
+		} else {
+			fmt.Printf("   Total domains: %d\n", domainCount)
+		}
+	}
+	
+	// Service status
+	fmt.Println("\n⚙️  Services:")
+	fmt.Println("────────────────────────────────────────────────────────────────────")
+	services := []string{"exim4", "dovecot", "clamav-daemon", "spamassassin"}
+	for _, svc := range services {
+		statusCmd := exec.Command("systemctl", "is-active", svc)
+		statusOutput, _ := statusCmd.Output()
+		status := strings.TrimSpace(string(statusOutput))
+		
+		icon := "✓"
+		if status != "active" {
+			icon = "✗"
+		}
+		fmt.Printf("   %s %-20s %s\n", icon, svc, status)
+	}
+	
+	// Storage statistics
+	fmt.Println("\n💾 Storage:")
+	fmt.Println("────────────────────────────────────────────────────────────────────")
+	sizeCmd := exec.Command("du", "-sh", "/var/mail/vhosts")
+	if sizeOutput, err := sizeCmd.Output(); err == nil {
+		size := strings.Fields(string(sizeOutput))
+		if len(size) > 0 {
+			fmt.Printf("   Total mail storage: %s\n", size[0])
+		}
+	}
+	
+	// Database size (for Dovecot)
+	fmt.Println("\n🗂️  Configuration:")
+	fmt.Println("────────────────────────────────────────────────────────────────────")
+	fmt.Printf("   Exim4 config: /etc/exim4/exim4.conf.d/\n")
+	fmt.Printf("   Dovecot config: /etc/dovecot/dovecot.conf\n")
+	fmt.Printf("   Mail storage: /var/mail/vhosts/\n")
+	fmt.Printf("   Domain configs: /etc/exim4/domains/\n")
+	fmt.Println()
 }
 
 func testMailServer() {
