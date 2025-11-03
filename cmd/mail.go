@@ -520,6 +520,33 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 		}
 	}
 	
+	// Deploy Exim4 DNSBL and spam filtering configurations
+	fmt.Println("🚫 Deploying DNSBL and spam filtering configurations...")
+	
+	// Deploy DNSBL config
+	if dnsblConf, err := templates.GetMailTemplate("dnsbl.conf"); err == nil {
+		ioutil.WriteFile("/etc/exim4/dnsbl.conf", dnsblConf, 0644)
+		exec.Command("chown", "root:root", "/etc/exim4/dnsbl.conf").Run()
+	}
+	
+	// Deploy spam-blocks config (local spam IP list)
+	if spamBlocksConf, err := templates.GetMailTemplate("spam-blocks.conf"); err == nil {
+		ioutil.WriteFile("/etc/exim4/spam-blocks.conf", spamBlocksConf, 0644)
+		exec.Command("chown", "root:root", "/etc/exim4/spam-blocks.conf").Run()
+	}
+	
+	// Deploy white-blocks config (whitelist IP list)
+	if whiteBlocksConf, err := templates.GetMailTemplate("white-blocks.conf"); err == nil {
+		ioutil.WriteFile("/etc/exim4/white-blocks.conf", whiteBlocksConf, 0644)
+		exec.Command("chown", "root:root", "/etc/exim4/white-blocks.conf").Run()
+	}
+	
+	// Deploy SMTP relay config (global default)
+	if smtpRelayConf, err := templates.GetMailTemplate("smtp_relay.conf"); err == nil {
+		ioutil.WriteFile("/etc/exim4/smtp_relay.conf", smtpRelayConf, 0644)
+		exec.Command("chown", "root:root", "/etc/exim4/smtp_relay.conf").Run()
+	}
+	
 	// Generate unified DH parameters for SSL/TLS (used by both Nginx and Dovecot)
 	fmt.Println("🔐 Generating SSL DH parameters (this may take a minute)...")
 	dhparamPath := "/etc/ssl/dhparam.pem"
@@ -610,8 +637,191 @@ dc_pf4='127.0.0.1'
 
 	// Step 3: Enable and start services
 	fmt.Println("🔄 Starting services...")
+	
+	// Validate Exim4 configuration before starting
+	fmt.Println("🔍 Validating Exim4 configuration...")
+	exim4ValidateCmd := exec.Command("sudo", "exim4", "-bV")
+	if output, err := exim4ValidateCmd.CombinedOutput(); err != nil {
+		fmt.Printf("❌ Exim4 configuration validation failed:\n")
+		fmt.Printf("%s\n", string(output))
+		fmt.Println("\n⚠️  Configuration has errors. Attempting to fix...")
+		
+		// If validation fails, try to regenerate config from simpler template
+		simpleExim4Conf := `######################################################################
+#                  Exim4 Mail Server Configuration                    #
+#                    WebStack CLI - Fallback                          #
+######################################################################
+
+primary_hostname = localhost.localdomain
+qualify_domain = localhost.localdomain
+smtp_banner = $smtp_active_hostname ESMTP Exim
+
+never_users = root : bin : daemon : nobody
+log_file_path = /var/log/exim4/%s/mainlog
+smtp_accept_max = 100
+smtp_accept_max_per_host = 20
+smtp_accept_reserve = 10
+
+domainlist local_domains = dsearch;/etc/exim4/domains/
+domainlist relay_to_domains = dsearch;/etc/exim4/domains/
+hostlist relay_from_hosts = 127.0.0.1
+
+tls_advertise_hosts = *
+tls_certificate = /etc/ssl/certs/webstack-mail.crt
+tls_privatekey = /etc/ssl/private/webstack-mail.key
+daemon_smtp_ports = 25 : 465 : 587
+tls_on_connect_ports = 465
+
+auth_advertise_hosts = localhost : ${if eq{$tls_in_cipher}{}{}{*}}
+
+DKIM_DOMAIN = $domain
+DKIM_FILE = /etc/exim4/domains/$domain/dkim.private
+DKIM_SELECTOR = mail
+
+system_filter = /etc/exim4/system.filter
+system_filter_user = Debian-exim
+
+host_lookup = *
+rfc1413_hosts = *
+rfc1413_query_timeout = 5s
+ignore_bounce_errors_after = 2d
+timeout_frozen_after = 7d
+
+receive_timeout = 0s
+smtp_receive_timeout = 5m
+
+######################################################################
+#                      ACL CONFIGURATION                             #
+######################################################################
+
+begin acls
+
+acl_check_rcpt:
+  accept  hosts         = :
+  accept  authenticated = *
+  accept  domains       = +local_domains
+          verify        = recipient/callout=no,defer_ok
+  accept  hosts         = +relay_from_hosts
+          domains       = +relay_to_domains
+  deny    message       = Relay not permitted
+
+acl_check_data:
+  accept
+
+######################################################################
+#                   AUTHENTICATORS CONFIGURATION                     #
+######################################################################
+
+begin authenticators
+
+plain_auth:
+  driver               = plaintext
+  public_name          = PLAIN
+  server_prompts       = :
+  server_condition     = ${if exists{/etc/exim4/domains/$domain/passwd}{yes}{no}}
+  server_set_id        = $auth2
+
+######################################################################
+#                      ROUTERS CONFIGURATION                         #
+######################################################################
+
+begin routers
+
+alias_router:
+  driver               = redirect
+  domains              = +local_domains
+  data                 = ${extract{1}{:}{${lookup{$local_part}lsearch*@{/etc/exim4/domains/$domain/aliases}}}}
+  require_files        = /etc/exim4/domains/$domain/aliases
+  allow_fail
+  redirect_router      = local_user
+  pipe_transport       = address_pipe
+
+dnslookup:
+  driver               = dnslookup
+  domains              = !+local_domains
+  transport            = remote_smtp
+  ignore_target_hosts  = 127.0.0.0/8 : ::1
+  no_more
+
+local_user:
+  driver               = accept
+  domains              = +local_domains
+  condition            = ${if exists{/etc/exim4/domains/$domain/passwd}{yes}{no}}
+  transport            = virtual_delivery
+  user                 = mail
+  group                = mail
+
+######################################################################
+#                      TRANSPORTS CONFIGURATION                      #
+######################################################################
+
+begin transports
+
+virtual_delivery:
+  driver               = appendfile
+  directory            = /var/mail/vhosts/$domain/$local_part
+  maildir_format       = true
+  create_directory     = true
+  directory_mode       = 0770
+  mode                 = 0660
+  use_lockfile         = false
+  delivery_date_add
+  envelope_to_add
+  return_path_add
+  user                 = mail
+  group                = mail
+
+remote_smtp:
+  driver               = smtp
+  dkim_domain          = $domain
+  dkim_selector        = mail
+  dkim_private_key     = ${if exists{/etc/exim4/domains/$domain/dkim.private}{/etc/exim4/domains/$domain/dkim.private}{0}}
+  dkim_canon           = relaxed/relaxed
+  dkim_sign_headers    = from : to : date : subject : message-id : content-type
+  hosts_try_tls        = *
+  tls_try_verify_hosts = *
+
+address_pipe:
+  driver               = pipe
+  return_output
+  user                 = mail
+  group                = mail
+
+######################################################################
+#                      RETRY CONFIGURATION                           #
+######################################################################
+
+begin retry
+
+*                      *  F,2h,15m; G,16h,1h,1.5; F,4d,6h
+`
+		ioutil.WriteFile("/etc/exim4/exim4.conf", []byte(simpleExim4Conf), 0644)
+		fmt.Println("✓ Reverted to fallback Exim4 configuration")
+		
+		// Validate fallback config
+		exim4ValidateCmd := exec.Command("sudo", "exim4", "-bV")
+		if output, err := exim4ValidateCmd.CombinedOutput(); err != nil {
+			fmt.Printf("⚠️  Fallback config also failed: %s\n", string(output))
+			fmt.Println("   Please check /etc/exim4/exim4.conf manually")
+			return
+		}
+	}
+	fmt.Println("✓ Exim4 configuration is valid")
+	
 	exec.Command("systemctl", "enable", "exim4", "dovecot").Run()
-	exec.Command("systemctl", "restart", "exim4", "dovecot").Run()
+	
+	// Try to start exim4 with error checking
+	fmt.Println("🚀 Starting Exim4...")
+	if err := exec.Command("systemctl", "restart", "exim4").Run(); err != nil {
+		fmt.Printf("⚠️  Exim4 restart warning: %v\n", err)
+		fmt.Println("   Checking status...")
+		statusCmd := exec.Command("systemctl", "status", "exim4")
+		statusCmd.Run()
+	}
+	
+	// Start Dovecot
+	fmt.Println("🚀 Starting Dovecot...")
+	exec.Command("systemctl", "restart", "dovecot").Run()
 	
 	// Enable and start ClamAV if antivirus is enabled
 	if enableAV {
