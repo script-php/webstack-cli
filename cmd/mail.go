@@ -377,6 +377,42 @@ func init() {
 
 // Implementation functions
 
+// detectExim4Version detects the installed Exim4 version and returns it in format "4.94", "4.95", "4.97+"
+func detectExim4Version() string {
+	cmd := exec.Command("exim4", "-bV")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Fallback to default if detection fails
+		fmt.Printf("⚠️  Warning: Could not detect Exim4 version: %v\n", err)
+		return "4.97"
+	}
+
+	outputStr := string(output)
+	// Look for version string like "Exim version 4.97 #2"
+	if strings.Contains(outputStr, "Exim version 4.94") {
+		return "4.94"
+	} else if strings.Contains(outputStr, "Exim version 4.95") {
+		return "4.95"
+	} else if strings.Contains(outputStr, "Exim version 4.96") {
+		return "4.95"  // 4.96 uses 4.95 config (compatible)
+	} else {
+		// Default to 4.97+ for any newer versions
+		return "4.97"
+	}
+}
+
+// selectExim4ConfigTemplate selects the appropriate Exim4 config based on version
+func selectExim4ConfigTemplate(version string) string {
+	switch version {
+	case "4.94":
+		return "exim4-4.94.conf"
+	case "4.95":
+		return "exim4-4.95.conf"
+	default:
+		return "exim4-4.97.conf"
+	}
+}
+
 func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) {
 	fmt.Println("📧 Installing Mail Server...")
 
@@ -451,11 +487,26 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 	// Step 2.3: Deploy configuration files from templates
 	fmt.Println("⚙️  Deploying configuration files...")
 	
-	// Deploy exim4 main config
-	if exim4Conf, err := templates.GetMailTemplate("exim4.conf"); err == nil {
+	// Detect Exim4 version and select appropriate config template
+	fmt.Println("🔍 Detecting Exim4 version...")
+	exim4Version := detectExim4Version()
+	exim4ConfigTemplate := selectExim4ConfigTemplate(exim4Version)
+	fmt.Printf("✓ Detected Exim4 version: %s (using %s)\n", exim4Version, exim4ConfigTemplate)
+	
+	// Deploy version-specific exim4 config
+	if exim4Conf, err := templates.GetMailTemplate(exim4ConfigTemplate); err == nil {
 		ioutil.WriteFile("/etc/exim4/exim4.conf", exim4Conf, 0644)
 		exec.Command("chown", "root:root", "/etc/exim4/exim4.conf").Run()
 		exec.Command("chmod", "644", "/etc/exim4/exim4.conf").Run()
+		fmt.Printf("✓ Deployed %s config\n", exim4ConfigTemplate)
+	} else {
+		fmt.Printf("⚠️  Warning: Could not load %s, using fallback\n", exim4ConfigTemplate)
+		// Fallback to basic config if versioned template not found
+		if exim4Conf, err := templates.GetMailTemplate("exim4.conf"); err == nil {
+			ioutil.WriteFile("/etc/exim4/exim4.conf", exim4Conf, 0644)
+			exec.Command("chown", "root:root", "/etc/exim4/exim4.conf").Run()
+			exec.Command("chmod", "644", "/etc/exim4/exim4.conf").Run()
+		}
 	}
 	
 	// Create exim4.conf.d directory structure
@@ -545,6 +596,14 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 	if smtpRelayConf, err := templates.GetMailTemplate("smtp_relay.conf"); err == nil {
 		ioutil.WriteFile("/etc/exim4/smtp_relay.conf", smtpRelayConf, 0644)
 		exec.Command("chown", "root:root", "/etc/exim4/smtp_relay.conf").Run()
+	}
+	
+	// Deploy SRS (Sender Rewriting Scheme) config
+	fmt.Println("🔄 Deploying SRS (Sender Rewriting Scheme) configuration...")
+	if srsConf, err := templates.GetMailTemplate("srs.conf"); err == nil {
+		ioutil.WriteFile("/etc/exim4/srs.conf", srsConf, 0644)
+		exec.Command("chown", "root:root", "/etc/exim4/srs.conf").Run()
+		fmt.Println("✓ SRS configuration deployed (for SPF compliance on forwarded emails)")
 	}
 	
 	// Generate unified DH parameters for SSL/TLS (used by both Nginx and Dovecot)
