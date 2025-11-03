@@ -1785,16 +1785,50 @@ func configureNginx() {
 	}
 	fmt.Println("✅ Error pages deployed to /etc/webstack/error/")
 
-	// Generate dhparam.pem for SSL if it doesn't exist
+	// Generate unified DH parameters for SSL/TLS (used by both Nginx and Dovecot)
 	dhparamPath := "/etc/ssl/dhparam.pem"
-	if _, err := os.Stat(dhparamPath); os.IsNotExist(err) {
-		fmt.Println("🔐 Generating SSL dhparam (this may take a minute)...")
-		cmd := exec.Command("openssl", "dhparam", "-out", dhparamPath, "2048")
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("⚠️  Warning: Could not generate dhparam: %v\n", err)
-		} else {
-			fmt.Println("✅ SSL dhparam generated")
+	
+	// Check if openssl is available
+	if err := exec.Command("which", "openssl").Run(); err != nil {
+		fmt.Println("⚠️  Warning: OpenSSL not found, skipping DH parameter generation")
+		fmt.Println("   Install it later with: sudo apt install -y openssl")
+	} else if _, err := os.Stat(dhparamPath); os.IsNotExist(err) {
+		fmt.Println("🔐 Generating SSL DH parameters (this may take a minute)...")
+		
+		// Generate DH params with retry logic (up to 3 attempts)
+		maxRetries := 3
+		success := false
+		
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if attempt > 1 {
+				fmt.Printf("   Retry attempt %d/%d...\n", attempt, maxRetries)
+			}
+			
+			cmd := exec.Command("openssl", "dhparam", "-out", dhparamPath, "2048")
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("   ⚠️  Generation attempt %d failed: %v\n", attempt, err)
+				if attempt < maxRetries {
+					fmt.Println("   Retrying...")
+					continue
+				} else {
+					fmt.Printf("❌ Failed to generate DH parameters after %d attempts\n", maxRetries)
+					fmt.Println("   ℹ️  You can generate them manually later with:")
+					fmt.Printf("   sudo openssl dhparam -out %s 2048\n", dhparamPath)
+				}
+			} else {
+				success = true
+				fmt.Println("✅ DH parameters generated successfully")
+				break
+			}
 		}
+		
+		// If generation succeeded, set proper permissions
+		if success {
+			exec.Command("chmod", "644", dhparamPath).Run()
+			fmt.Println("✓ Permissions set (644)")
+		}
+	} else {
+		fmt.Println("✓ SSL DH parameters already exist at " + dhparamPath)
 	}
 
 	// Write to /etc/nginx/nginx.conf

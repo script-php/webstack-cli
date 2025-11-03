@@ -386,7 +386,7 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 
 	// Step 1: Update packages
 	fmt.Println("📦 Installing mail packages...")
-	pkgs := []string{"exim4", "exim4-daemon-light", "dovecot-core", "dovecot-imapd", "dovecot-pop3d", "dovecot-sieve"}
+	pkgs := []string{"exim4", "exim4-daemon-heavy", "dovecot-core", "dovecot-imapd", "dovecot-pop3d", "dovecot-sieve"}
 	if enableAV {
 		pkgs = append(pkgs, "clamav", "clamav-daemon", "clamav-freshclam")
 	}
@@ -395,6 +395,20 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 	}
 
 	exec.Command("apt", "update").Run()
+	
+	// Ensure openssl is installed for DH param generation
+	fmt.Println("🔐 Checking for OpenSSL...")
+	if err := exec.Command("which", "openssl").Run(); err != nil {
+		fmt.Println("📦 Installing openssl...")
+		if err := exec.Command("apt", "install", "-y", "openssl").Run(); err != nil {
+			fmt.Printf("❌ Failed to install openssl: %v\n", err)
+			return
+		}
+		fmt.Println("✓ OpenSSL installed")
+	} else {
+		fmt.Println("✓ OpenSSL already available")
+	}
+	
 	args := append([]string{"install", "-y"}, pkgs...)
 	if err := exec.Command("apt", args...).Run(); err != nil {
 		fmt.Printf("❌ Failed to install packages: %v\n", err)
@@ -413,6 +427,25 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 	exec.Command("chown", "-R", "Debian-exim:mail", "/etc/exim4").Run()
 	exec.Command("chown", "-R", "mail:mail", "/var/mail/vhosts").Run()
 	exec.Command("chown", "-R", "dovecot:dovecot", "/etc/dovecot").Run()
+	
+	// Initialize domain files (passwd, aliases, dkim.pem)
+	fmt.Println("📝 Initializing domain configuration files...")
+	domainPath := "/etc/exim4/domains/" + domain
+	
+	// Create empty passwd and aliases files
+	ioutil.WriteFile(filepath.Join(domainPath, "passwd"), []byte(""), 0644)
+	ioutil.WriteFile(filepath.Join(domainPath, "aliases"), []byte(""), 0644)
+	
+	// Generate DKIM key for the domain
+	dkimPath := filepath.Join(domainPath, "dkim.pem")
+	if err := exec.Command("openssl", "genrsa", "-out", dkimPath, "2048").Run(); err != nil {
+		fmt.Printf("⚠️  Warning: Could not generate DKIM key: %v\n", err)
+	}
+	
+	// Set proper ownership on domain files
+	exec.Command("chown", "-R", "Debian-exim:mail", domainPath).Run()
+	exec.Command("chmod", "600", dkimPath).Run()
+	
 	fmt.Println("✓ Directories configured")
 
 	// Step 2.3: Deploy configuration files from templates
@@ -447,9 +480,22 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 		exec.Command("chown", "root:root", "/etc/dovecot/dovecot.conf").Run()
 	}
 	
+	// Create empty local.conf placeholder for custom user configurations
+	localConfContent := `# /etc/dovecot/local.conf
+# This file is for local customizations
+# Add custom Dovecot configuration here
+# Example:
+#   passdb {
+#     driver = static
+#     args = password=test
+#   }
+`
+	ioutil.WriteFile("/etc/dovecot/local.conf", []byte(localConfContent), 0644)
+	exec.Command("chown", "root:root", "/etc/dovecot/local.conf").Run()
+	
 	// Create dovecot config.d directory and deploy config fragments
 	os.MkdirAll("/etc/dovecot/conf.d", 0755)
-	dovecotFiles := []string{"10-auth.conf", "10-ssl.conf", "10-master.conf", "20-imap.conf", "20-pop3.conf", "90-quota.conf", "90-sieve.conf"}
+	dovecotFiles := []string{"10-auth.conf", "10-ssl.conf", "20-imap.conf", "20-pop3.conf", "90-quota.conf", "90-sieve.conf"}
 	for _, file := range dovecotFiles {
 		if content, err := templates.GetMailTemplate(file); err == nil {
 			ioutil.WriteFile("/etc/dovecot/conf.d/"+file, content, 0644)
@@ -472,6 +518,62 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 			ioutil.WriteFile("/etc/spamassassin/local.cf", saConf, 0644)
 			exec.Command("chown", "root:root", "/etc/spamassassin/local.cf").Run()
 		}
+	}
+	
+	// Generate unified DH parameters for SSL/TLS (used by both Nginx and Dovecot)
+	fmt.Println("🔐 Generating SSL DH parameters (this may take a minute)...")
+	dhparamPath := "/etc/ssl/dhparam.pem"
+	dovecotDhLink := "/etc/dovecot/dh.pem"
+	
+	// Check if DH params already exist
+	if _, err := os.Stat(dhparamPath); os.IsNotExist(err) {
+		// Generate DH params with retry logic (up to 3 attempts)
+		maxRetries := 3
+		success := false
+		
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if attempt > 1 {
+				fmt.Printf("   Retry attempt %d/%d...\n", attempt, maxRetries)
+			}
+			
+			cmd := exec.Command("openssl", "dhparam", "-out", dhparamPath, "2048")
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("   ⚠️  Generation attempt %d failed: %v\n", attempt, err)
+				if attempt < maxRetries {
+					fmt.Println("   Retrying...")
+					continue
+				} else {
+					fmt.Printf("❌ Failed to generate DH parameters after %d attempts\n", maxRetries)
+					fmt.Println("   ℹ️  You can generate them manually later with:")
+					fmt.Printf("   sudo openssl dhparam -out %s 2048\n", dhparamPath)
+				}
+			} else {
+				success = true
+				fmt.Println("✅ DH parameters generated successfully")
+				break
+			}
+		}
+		
+		// If generation succeeded, set proper permissions
+		if success {
+			exec.Command("chmod", "644", dhparamPath).Run()
+			fmt.Println("✓ Permissions set (644)")
+		}
+	} else {
+		fmt.Println("✓ DH parameters already exist at " + dhparamPath)
+	}
+	
+	// Create symlink for Dovecot to use the unified DH params
+	if _, err := os.Stat(dovecotDhLink); err == nil || os.IsExist(err) {
+		// Remove old symlink or file if it exists
+		os.Remove(dovecotDhLink)
+	}
+	
+	if err := os.Symlink(dhparamPath, dovecotDhLink); err != nil {
+		fmt.Printf("⚠️  Warning: Could not create symlink %s -> %s: %v\n", dovecotDhLink, dhparamPath, err)
+		fmt.Println("   ℹ️  Dovecot will use default DH params instead")
+	} else {
+		fmt.Printf("✓ Dovecot symlink created: %s -> %s\n", dovecotDhLink, dhparamPath)
 	}
 	
 	// Create update-exim4.conf.conf to prevent exim startup errors
@@ -510,6 +612,14 @@ dc_pf4='127.0.0.1'
 	fmt.Println("🔄 Starting services...")
 	exec.Command("systemctl", "enable", "exim4", "dovecot").Run()
 	exec.Command("systemctl", "restart", "exim4", "dovecot").Run()
+	
+	// Enable and start ClamAV if antivirus is enabled
+	if enableAV {
+		fmt.Println("🔒 Starting antivirus daemon...")
+		exec.Command("systemctl", "enable", "clamav-daemon", "clamav-freshclam").Run()
+		exec.Command("systemctl", "restart", "clamav-daemon", "clamav-freshclam").Run()
+	}
+	
 	fmt.Println("✓ Services started")
 
 	// Step 4: Configure firewall
@@ -561,7 +671,6 @@ func showMailStatus() {
 		"exim4":          "SMTP Server",
 		"dovecot":        "IMAP/POP3 Server",
 		"clamav-daemon":  "Antivirus Daemon",
-		"spamd":          "SpamAssassin Daemon",
 	}
 	for svc, name := range services {
 		if err := exec.Command("systemctl", "is-active", "--quiet", svc).Run(); err == nil {
@@ -569,6 +678,13 @@ func showMailStatus() {
 		} else {
 			fmt.Printf("⚠️  %s: Stopped\n", name)
 		}
+	}
+	
+	// Check if SpamAssassin is installed (not a daemon, but integrated with Exim)
+	if err := exec.Command("which", "spamassassin").Run(); err == nil {
+		fmt.Printf("✅ %s: Installed (integrated with Exim)\n", "Anti-spam Filter")
+	} else {
+		fmt.Printf("⚠️  %s: Not installed\n", "Anti-spam Filter")
 	}
 }
 
