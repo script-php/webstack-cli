@@ -427,7 +427,7 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 		pkgs = append(pkgs, "clamav", "clamav-daemon", "clamav-freshclam")
 	}
 	if enableSpam {
-		pkgs = append(pkgs, "spamassassin", "spamc")
+		pkgs = append(pkgs, "spamassassin", "spamc", "spamd")
 	}
 
 	exec.Command("apt", "update").Run()
@@ -568,6 +568,12 @@ func installMailServer(domain string, enableAV, enableSpam, enableWebmail bool) 
 		if saConf, err := templates.GetMailTemplate("local.cf"); err == nil {
 			ioutil.WriteFile("/etc/spamassassin/local.cf", saConf, 0644)
 			exec.Command("chown", "root:root", "/etc/spamassassin/local.cf").Run()
+		}
+		
+		// Deploy spamd socket configuration for Exim4 integration
+		if spamdConfig, err := templates.GetMailTemplate("spamd.default"); err == nil {
+			ioutil.WriteFile("/etc/default/spamd", spamdConfig, 0644)
+			exec.Command("chown", "root:root", "/etc/default/spamd").Run()
 		}
 	}
 	
@@ -869,6 +875,13 @@ begin retry
 	
 	exec.Command("systemctl", "enable", "exim4", "dovecot").Run()
 	
+	// Enable and start SpamAssassin daemon if anti-spam is enabled
+	if enableSpam {
+		fmt.Println("🔍 Starting SpamAssassin daemon...")
+		exec.Command("systemctl", "enable", "spamd").Run()
+		exec.Command("systemctl", "restart", "spamd").Run()
+	}
+	
 	// Try to start exim4 with error checking
 	fmt.Println("🚀 Starting Exim4...")
 	if err := exec.Command("systemctl", "restart", "exim4").Run(); err != nil {
@@ -940,6 +953,7 @@ func showMailStatus() {
 		"exim4":          "SMTP Server",
 		"dovecot":        "IMAP/POP3 Server",
 		"clamav-daemon":  "Antivirus Daemon",
+		"spamd":          "SpamAssassin Daemon",
 	}
 	for svc, name := range services {
 		if err := exec.Command("systemctl", "is-active", "--quiet", svc).Run(); err == nil {
