@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	"webstack-cli/internal/cron"
 	"webstack-cli/internal/domain"
 	"webstack-cli/internal/templates"
 )
@@ -901,7 +902,8 @@ fi
 	existingCrons := string(output)
 
 	if strings.Contains(existingCrons, scriptPath) {
-		// Cronjob already exists
+		// Cronjob already exists, register it if not already registered
+		cron.RegisterSystemCron("0 2 * * *", scriptPath, fmt.Sprintf("SSL certificate renewal for %s", domainName), "ssl")
 		return nil
 	}
 
@@ -912,6 +914,9 @@ fi
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("could not add cronjob: %v", err)
 	}
+
+	// Register the SSL renewal cron in the cron manager
+	cron.RegisterSystemCron("0 2 * * *", scriptPath, fmt.Sprintf("SSL certificate renewal for %s", domainName), "ssl")
 
 	return nil
 }

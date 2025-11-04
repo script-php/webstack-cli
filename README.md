@@ -66,6 +66,15 @@ A comprehensive command-line tool for managing a complete web development stack 
 - Self-signed certificate support
 - Automatic certificate renewal
 
+### Backup & Restore (Enterprise-Grade)
+- **Full system backups**: Domains, databases, SSL certificates, web configs, firewall rules
+- **Selective backups**: Single domains or specific databases
+- **Archive-based storage**: Efficient `.tar.gz` compression with SHA256 checksums
+- **Integrity verification**: Verify backups before restoring
+- **Scheduled backups**: Automatic daily backups with retention management
+- **Import/Export**: Move backups between servers
+- **Staging extraction**: Safe restore with staging directories
+
 ## Installation
 
 ### Quick Start (Recommended)
@@ -195,6 +204,118 @@ sudo webstack ssl renew
 sudo webstack ssl status example.com
 sudo webstack ssl status  # All domains
 ```
+
+### Backup & Restore Management
+
+#### Create Backups
+
+```bash
+# Full system backup (all domains, databases, configs, SSL, firewall)
+sudo webstack backup create --all
+
+# Single domain backup
+sudo webstack backup create --domain example.com
+
+# Database-only backup
+sudo webstack backup create --database mysql:wordpress
+sudo webstack backup create --database postgresql:analytics
+
+# With specific compression
+sudo webstack backup create --all --compress gzip
+sudo webstack backup create --all --compress bzip2
+sudo webstack backup create --all --compress xz
+sudo webstack backup create --all --compress none
+```
+
+#### List & Verify Backups
+
+```bash
+# List all backups
+sudo webstack backup list
+
+# List backups for specific domain
+sudo webstack backup list --domain example.com
+
+# List backups from last 7 days
+sudo webstack backup list --since 7d
+
+# List backups from last 3 months
+sudo webstack backup list --since 3m
+
+# Verify backup integrity before restore
+sudo webstack backup verify backup-1762257844
+```
+
+#### Restore from Backup
+
+```bash
+# Restore full system
+sudo webstack backup restore backup-1762257844
+
+# Restore specific domain only
+sudo webstack backup restore backup-1762257844 --domain example.com
+
+# Verify backup before restoring (dry-run)
+sudo webstack backup restore backup-1762257844 --verify-only
+
+# Skip confirmation prompt
+sudo webstack backup restore backup-1762257844 --force
+```
+
+#### Export & Import Backups
+
+```bash
+# Export backup to external location
+sudo webstack backup export backup-1762257844 /tmp/backup-export.tar.gz
+
+# Import backup from external file
+sudo webstack backup import /tmp/backup-export.tar.gz
+
+# Export to external drive
+sudo webstack backup export backup-1762257844 /mnt/external/backup.tar.gz
+```
+
+#### Manage Backups
+
+```bash
+# Delete old backup
+sudo webstack backup delete backup-1762257844
+
+# View backup storage status
+sudo webstack backup status
+
+# Automatic daily backups at 2 AM, keep for 30 days
+sudo webstack backup schedule enable --time 02:00 --keep 30
+
+# Check scheduled backup status
+sudo webstack backup schedule status
+
+# Disable automatic backups
+sudo webstack backup schedule disable
+```
+
+#### Backup Storage
+
+All backups are stored as compressed `.tar.gz` archives in `/var/backups/webstack/archives/`:
+
+```
+/var/backups/webstack/
+├── archives/                          # Compressed backup files
+│   ├── backup-1762257844.tar.gz      # ~25 MB each
+│   └── backup-1762257863.tar.gz
+│
+└── metadata/                          # Backup metadata (JSON)
+    ├── backup-1762257844.json        # Timestamps, checksums, contents
+    └── backup-1762257863.json
+```
+
+Each backup contains:
+- **Domains**: All domain files and configurations
+- **Databases**: MySQL/MariaDB and PostgreSQL dumps
+- **SSL Certificates**: Let's Encrypt and self-signed certs
+- **Web Configs**: Nginx and Apache configurations
+- **Firewall Rules**: iptables rules and ipset lists
+- **Metadata**: domains.json, ssl.json configuration files
 
 ### Mail Server Management
 
@@ -579,6 +700,40 @@ sudo exim4 -bp
 
 # Restart mail services
 sudo systemctl restart exim4 dovecot
+```
+
+### Backup Troubleshooting
+```bash
+# View all backups
+sudo webstack backup list
+
+# Verify backup integrity
+sudo webstack backup verify backup-id
+
+# Check backup storage
+ls -lh /var/backups/webstack/archives/
+du -sh /var/backups/webstack/archives/
+
+# View backup metadata
+sudo cat /var/backups/webstack/metadata/backup-id.json
+
+# Test restore (verify-only mode)
+sudo webstack backup restore backup-id --verify-only
+
+# Check scheduled backups
+sudo webstack backup schedule status
+
+# View backup service logs
+sudo journalctl -u webstack-backup.service -f
+sudo journalctl -u webstack-backup.service -n 50
+
+# Check if backup directory is writable
+sudo touch /var/backups/webstack/archives/.write-test
+sudo rm /var/backups/webstack/archives/.write-test
+
+# Cleanup old backups manually
+# (normally automatic, but can run manually)
+sudo webstack backup list --since 30d
 ```
 
 ### Firewall Troubleshooting

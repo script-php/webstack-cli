@@ -2,9 +2,9 @@
 
 ## 🎯 Current State Summary
 
-**What Works**: ~85% of core functionality is complete and production-ready
+**What Works**: ~90% of core functionality is complete and production-ready
 **What's Partial**: Database/PHP configuration
-**What's Missing**: Advanced monitoring, backup/restore features
+**What's Missing**: Advanced monitoring
 
 ---
 
@@ -92,6 +92,23 @@ webstack version                                  # Show version info
 webstack update                                   # Check for updates
 ```
 
+### Backup & Restore
+```bash
+sudo webstack backup create --all                 # Full system backup
+sudo webstack backup create --domain example.com  # Single domain backup
+sudo webstack backup create --database mysql:wordpress  # Database backup
+sudo webstack backup list                         # List all backups
+sudo webstack backup list --since 7d              # List recent backups
+sudo webstack backup verify backup-id             # Verify backup integrity
+sudo webstack backup restore backup-id            # Restore from backup
+sudo webstack backup restore backup-id --force    # Skip confirmation
+sudo webstack backup export backup-id /path/file.tar.gz  # Export backup
+sudo webstack backup import /path/file.tar.gz     # Import backup
+sudo webstack backup delete backup-id             # Delete old backup
+sudo webstack backup schedule enable --time 02:00 --keep 30  # Auto daily backups
+sudo webstack backup schedule status              # Check schedule status
+```
+
 ---
 
 ## 📋 FEATURE MATRIX
@@ -127,6 +144,12 @@ webstack update                                   # Check for updates
 | Version Check | ✅ Complete | GitHub API integration |
 | Pre-Install Detection | ✅ Complete | All components |
 | Component Uninstall | ✅ Complete | All components with nuclear cleanup |
+| **Backup/Restore System** | **✅ Complete** | **Enterprise-grade with scheduling** |
+| Backup Creation | ✅ Complete | Full system, domains, or databases |
+| Backup Scheduling | ✅ Complete | Systemd timers with retention |
+| Backup Verification | ✅ Complete | SHA256 checksums and metadata |
+| Backup Restore | ✅ Complete | Full or selective restore with staging |
+| Backup Export/Import | ✅ Complete | Transfer backups between servers |
 
 ---
 
@@ -320,6 +343,7 @@ sudo systemctl restart nginx apache2
 - ✅ System reload, validation, and cleanup
 - ✅ Version checking and updates
 - ✅ UFW auto-removal (prevents conflicts)
+- ✅ Enterprise-grade backup/restore system with scheduling
 
 ### Included but Not Configured
 - ⚠️ MySQL/MariaDB/PostgreSQL (installed but config templates not applied)
@@ -327,7 +351,6 @@ sudo systemctl restart nginx apache2
 
 ### Not Included (Manual Setup Needed)
 - ❌ Advanced monitoring/alerting
-- ❌ Backup/restore automation
 - ❌ Load balancing
 - ❌ WebUI control panel
 
@@ -345,9 +368,8 @@ sudo systemctl restart nginx apache2
 
 ### Medium Priority (2-4 weeks)
 5. Health check command
-6. Configuration backup/rollback
-7. Monitoring/alerting integration
-8. Web control panel (optional)
+6. Configuration monitoring/alerting integration
+7. Web control panel (optional)
 
 ---
 
@@ -364,4 +386,4 @@ sudo systemctl restart nginx apache2
 - **Build Date**: November 4, 2025
 - **Go Version**: 1.25.3
 - **Cobra Framework**: v1.10.1
-- **Project Completion**: ~85% (core features) with enterprise security
+- **Project Completion**: ~90% (core features including enterprise backup system)
