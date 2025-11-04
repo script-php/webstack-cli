@@ -476,7 +476,7 @@ func enableMySQLRemoteAccess() {
 	}
 
 	// Ask for user password (for IDENTIFIED BY)
-	fmt.Print("🔐 Enter password for user '%s': ", dbUser)
+	fmt.Printf("Enter password for user '%s': ", dbUser)
 	var userPassword string
 	fmt.Scanln(&userPassword)
 
@@ -487,21 +487,21 @@ func enableMySQLRemoteAccess() {
 
 	mysqlCmd := exec.Command("mysql", "-u", adminUser, "-p"+adminPassword, "-e", grantCmd)
 	if err := mysqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error granting privileges: %v\n", err)
+		fmt.Printf("Error granting privileges: %v\n", err)
 		fmt.Println("   You may need to run manually:")
 		fmt.Printf("   mysql -u %s -p -e \"GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION; FLUSH PRIVILEGES;\"\n", adminUser, dbUser, hostPattern)
 		return
 	}
 
 	// Open firewall port 3306 for MySQL/MariaDB
-	fmt.Println("🔥 Opening firewall port 3306 for MySQL/MariaDB...")
+	fmt.Println("Opening firewall port 3306 for MySQL/MariaDB...")
 	exec.Command("iptables", "-A", "INPUT", "-p", "tcp", "--dport", "3306", "-j", "ACCEPT").Run()
 	exec.Command("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", "3306", "-j", "ACCEPT").Run()
 	// Persist rules
 	exec.Command("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true").Run()
 	exec.Command("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true").Run()
 
-	fmt.Printf("✅ Remote access enabled for %s\n", service)
+	fmt.Printf("Remote access enabled for %s\n", service)
 	fmt.Printf("   Listening on: %s:3306\n", bindAddress)
 	fmt.Printf("   User '%s' can connect from: %s\n", dbUser, hostPattern)
 	fmt.Printf("   Connect from: mysql -u %s -h <server-ip> -p\n", dbUser)
@@ -515,7 +515,7 @@ func disableMySQLRemoteAccess() {
 
 	data, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		fmt.Printf("❌ Error reading config: %v\n", err)
+		fmt.Printf("Error reading config: %v\n", err)
 		return
 	}
 
@@ -532,7 +532,7 @@ func disableMySQLRemoteAccess() {
 	}
 
 	if err := ioutil.WriteFile(configFile, []byte(content), 0644); err != nil {
-		fmt.Printf("❌ Error writing config: %v\n", err)
+		fmt.Printf("Error writing config: %v\n", err)
 		return
 	}
 
@@ -542,14 +542,14 @@ func disableMySQLRemoteAccess() {
 	}
 
 	if err := exec.Command("systemctl", "restart", service).Run(); err != nil {
-		fmt.Printf("❌ Error restarting %s: %v\n", service, err)
+		fmt.Printf("Error restarting %s: %v\n", service, err)
 		return
 	}
 
-	fmt.Println("✓ Updated bind-address in config")
+	fmt.Println("Updated bind-address in config")
 
 	// Get admin user (for running queries)
-	fmt.Print("\n� Enter MySQL/MariaDB admin user (default: root): ")
+	fmt.Print("\nEnter MySQL/MariaDB admin user (default: root): ")
 	var adminUser string
 	fmt.Scanln(&adminUser)
 	if adminUser == "" {
@@ -557,12 +557,12 @@ func disableMySQLRemoteAccess() {
 	}
 
 	// Get admin password
-	fmt.Print("🔐 Enter admin user password: ")
+	fmt.Print("Enter admin user password: ")
 	var adminPassword string
 	fmt.Scanln(&adminPassword)
 
 	// Ask which user to revoke privileges from
-	fmt.Print("\n👤 Enter database user to revoke remote access (default: root): ")
+	fmt.Print("\nEnter database user to revoke remote access (default: root): ")
 	var dbUser string
 	fmt.Scanln(&dbUser)
 	if dbUser == "" {

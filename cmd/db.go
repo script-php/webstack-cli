@@ -41,7 +41,7 @@ Usage:
 	Args: cobra.ExactArgs(4),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -61,7 +61,7 @@ Usage:
 		case "postgresql":
 			createPostgresqlUser(username, password, host)
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -84,7 +84,7 @@ Usage:
 	Args: cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -98,7 +98,7 @@ Usage:
 		case "postgresql":
 			deletePostgresqlUser(username)
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -115,13 +115,13 @@ Usage:
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			os.Exit(1)
 		}
 
 		if len(args) == 0 {
 			// Show all databases
-			fmt.Println("📋 Listing users from all databases...")
+			fmt.Println("Listing users from all databases...")
 			fmt.Println()
 			listMySQLUsers()
 			fmt.Println()
@@ -137,7 +137,7 @@ Usage:
 		case "postgresql":
 			listPostgresqlUsers()
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -153,7 +153,7 @@ Usage:
 	Args: cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -167,7 +167,7 @@ Usage:
 		case "postgresql":
 			changePostgresqlPassword(username, password)
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -184,7 +184,7 @@ Usage:
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -200,9 +200,9 @@ Usage:
 		case "mysql", "mariadb":
 			updateMySQLUser(username, privileges, maxConnections, requireSSL, noSSL)
 		case "postgresql":
-			fmt.Println("⚠️  PostgreSQL user updates coming soon")
+			fmt.Println("PostgreSQL user updates coming soon")
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -218,7 +218,7 @@ Usage:
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -231,7 +231,7 @@ Usage:
 		case "postgresql":
 			showPostgresqlUserInfo(username)
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -258,7 +258,7 @@ Usage:
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -274,7 +274,7 @@ Usage:
 		case "postgresql":
 			createPostgresqlDatabase(dbName, owner)
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -290,7 +290,7 @@ Usage:
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -304,7 +304,7 @@ Usage:
 		case "postgresql":
 			deletePostgresqlDatabase(dbName, force)
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -320,7 +320,7 @@ Usage:
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -332,7 +332,7 @@ Usage:
 		case "postgresql":
 			listPostgresqlDatabases()
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -348,7 +348,7 @@ Usage:
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() != 0 {
-			fmt.Println("❌ This command requires root privileges (use sudo)")
+			fmt.Println("This command requires root privileges (use sudo)")
 			return
 		}
 
@@ -361,7 +361,7 @@ Usage:
 		case "postgresql":
 			showPostgresqlDatabaseInfo(dbName)
 		default:
-			fmt.Printf("❌ Unknown database type: %s\n", dbType)
+			fmt.Printf("Unknown database type: %s\n", dbType)
 			fmt.Println("Supported: mysql, mariadb, postgresql")
 		}
 	},
@@ -383,6 +383,7 @@ func init_dbUserUpdateCmd() {
 	dbUserUpdateCmd.Flags().BoolP("require-ssl", "s", false, "Require SSL/TLS for connections")
 	dbUserUpdateCmd.Flags().BoolP("no-ssl", "n", false, "Remove SSL/TLS requirement")
 }
+
 // MySQL/MariaDB user management functions
 func createMySQLUser(username, password, host string) {
 	createMySQLUserWithOptions(username, password, host, "ALL", "*", 0, false)
@@ -406,7 +407,7 @@ func createMySQLUserWithOptions(username, password, host, privileges, database s
 
 	// Fallback to prompt if config not available
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -419,7 +420,7 @@ func createMySQLUserWithOptions(username, password, host, privileges, database s
 
 	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", createCmd)
 	if err := mysqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error creating user: %v\n", err)
+		fmt.Printf("Error creating user: %v\n", err)
 		fmt.Println("   Try manually: mysql -u root -p")
 		return
 	}
@@ -442,7 +443,7 @@ func createMySQLUserWithOptions(username, password, host, privileges, database s
 
 	mysqlCmd = exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", grantCmd)
 	if err := mysqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error granting privileges: %v\n", err)
+		fmt.Printf("Error granting privileges: %v\n", err)
 		return
 	}
 
@@ -465,7 +466,7 @@ func createMySQLUserWithOptions(username, password, host, privileges, database s
 
 		mysqlCmd = exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", alterCmd)
 		if err := mysqlCmd.Run(); err != nil {
-			fmt.Printf("⚠️  Warning: Could not set user limits: %v\n", err)
+			fmt.Printf("Warning: Could not set user limits: %v\n", err)
 		}
 	}
 
@@ -474,12 +475,12 @@ func createMySQLUserWithOptions(username, password, host, privileges, database s
 	mysqlCmd = exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", flushCmd)
 	mysqlCmd.Run()
 
-	fmt.Printf("✅ User '%s'@'%s' created successfully\n", username, host)
+	fmt.Printf("User '%s'@'%s' created successfully\n", username, host)
 	if privileges != "ALL" {
 		fmt.Printf("   Privileges: %s on %s\n", privileges, dbSpec)
 	}
 	if requireSSL {
-		fmt.Printf("   🔒 SSL/TLS required for connections\n")
+		fmt.Printf("   SSL/TLS required for connections\n")
 	}
 	if maxConnections > 0 {
 		fmt.Printf("   Max connections/hour: %d\n", maxConnections)
@@ -505,7 +506,7 @@ func deleteMySQLUser(username, host string) {
 
 	// Fallback to prompt if config not available
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -513,15 +514,15 @@ func deleteMySQLUser(username, host string) {
 
 	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", deleteCmd)
 	if err := mysqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error deleting user: %v\n", err)
+		fmt.Printf("Error deleting user: %v\n", err)
 		return
 	}
 
-	fmt.Printf("✅ User '%s'@'%s' deleted successfully\n", username, host)
+	fmt.Printf("User '%s'@'%s' deleted successfully\n", username, host)
 }
 
 func listMySQLUsers() {
-	fmt.Println("👤 MySQL Users:")
+	fmt.Println("MySQL Users:")
 	fmt.Println("─────────────────────────────────────────")
 
 	// Load config to get password from defaults
@@ -539,7 +540,7 @@ func listMySQLUsers() {
 
 	// Fallback to prompt if config not available
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB root password: ")
+		fmt.Print("Enter MySQL/MariaDB root password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -550,14 +551,14 @@ func executeMySQLQuery(query, user, password string) {
 	mysqlCmd := exec.Command("mysql", "-u", user, "-p"+password, "-e", query)
 	output, err := mysqlCmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("❌ Error: %v\n", err)
+		fmt.Printf("Error: %v\n", err)
 		return
 	}
 	fmt.Print(string(output))
 }
 
 func changeMySQLPassword(username, password string) {
-	fmt.Printf("🔑 Changing password for user '%s'...\n", username)
+	fmt.Printf("Changing password for user '%s'...\n", username)
 
 	// Load config to get admin password from defaults
 	cfg, err := config.Load()
@@ -574,7 +575,7 @@ func changeMySQLPassword(username, password string) {
 
 	// Fallback to prompt if config not available
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -582,13 +583,13 @@ func changeMySQLPassword(username, password string) {
 	getHostCmd := fmt.Sprintf("SELECT Host FROM mysql.user WHERE User='%s' LIMIT 1;", username)
 	output, err := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-sNe", getHostCmd).Output()
 	if err != nil {
-		fmt.Printf("❌ User not found: %s\n", username)
+		fmt.Printf("User not found: %s\n", username)
 		return
 	}
 
 	host := strings.TrimSpace(string(output))
 	if host == "" {
-		fmt.Printf("❌ User '%s' not found\n", username)
+		fmt.Printf("User '%s' not found\n", username)
 		return
 	}
 
@@ -597,22 +598,22 @@ func changeMySQLPassword(username, password string) {
 
 	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", updateCmd)
 	if err := mysqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error changing password: %v\n", err)
+		fmt.Printf("Error changing password: %v\n", err)
 		return
 	}
 
-	fmt.Printf("✅ Password changed for '%s'@'%s'\n", username, host)
+	fmt.Printf("Password changed for '%s'@'%s'\n", username, host)
 }
 
 // PostgreSQL user management functions
 func createPostgresqlUser(username, password, host string) {
-	fmt.Printf("👤 Creating PostgreSQL user '%s'...\n", username)
+	fmt.Printf("Creating PostgreSQL user '%s'...\n", username)
 
 	createCmd := fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s' CREATEDB;", username, password)
 
 	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", createCmd)
 	if err := psqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error creating user: %v\n", err)
+		fmt.Printf("Error creating user: %v\n", err)
 		return
 	}
 
@@ -621,54 +622,54 @@ func createPostgresqlUser(username, password, host string) {
 	psqlCmd = exec.Command("sudo", "-u", "postgres", "psql", "-c", grantCmd)
 	psqlCmd.Run() // Ignore error if schema doesn't exist yet
 
-	fmt.Printf("✅ PostgreSQL user '%s' created successfully\n", username)
+	fmt.Printf("PostgreSQL user '%s' created successfully\n", username)
 	fmt.Printf("   Connect with: psql -U %s -h <server> -d postgres\n", username)
 }
 
 func deletePostgresqlUser(username string) {
-	fmt.Printf("🗑️  Deleting PostgreSQL user '%s'...\n", username)
+	fmt.Printf("Deleting PostgreSQL user '%s'...\n", username)
 
 	// Drop owned objects first
 	dropCmd := fmt.Sprintf("DROP OWNED BY %s CASCADE; DROP USER IF EXISTS %s;", username, username)
 
 	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", dropCmd)
 	if err := psqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error deleting user: %v\n", err)
+		fmt.Printf("Error deleting user: %v\n", err)
 		return
 	}
 
-	fmt.Printf("✅ PostgreSQL user '%s' deleted successfully\n", username)
+	fmt.Printf("PostgreSQL user '%s' deleted successfully\n", username)
 }
 
 func listPostgresqlUsers() {
-	fmt.Println("👤 PostgreSQL Users:")
+	fmt.Println("PostgreSQL Users:")
 	fmt.Println("─────────────────────────────────────────")
 
 	listCmd := `\du`
 
 	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", listCmd)
 	if err := psqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error listing users: %v\n", err)
+		fmt.Printf("Error listing users: %v\n", err)
 		return
 	}
 }
 
 func changePostgresqlPassword(username, password string) {
-	fmt.Printf("🔑 Changing password for user '%s'...\n", username)
+	fmt.Printf("Changing password for user '%s'...\n", username)
 
 	updateCmd := fmt.Sprintf("ALTER USER %s WITH PASSWORD '%s';", username, password)
 
 	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", updateCmd)
 	if err := psqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error changing password: %v\n", err)
+		fmt.Printf("Error changing password: %v\n", err)
 		return
 	}
 
-	fmt.Printf("✅ Password changed for user '%s'\n", username)
+	fmt.Printf("Password changed for user '%s'\n", username)
 }
 
 func updateMySQLUser(username string, privileges string, maxConnections int, requireSSL, noSSL bool) {
-	fmt.Printf("🔧 Updating MySQL user '%s'...\n", username)
+	fmt.Printf("Updating MySQL user '%s'...\n", username)
 
 	// Load config to get admin password from defaults
 	cfg, err := config.Load()
@@ -683,12 +684,12 @@ func updateMySQLUser(username string, privileges string, maxConnections int, req
 	}
 
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
 	if requireSSL && noSSL {
-		fmt.Println("❌ Cannot use both --require-ssl and --no-ssl")
+		fmt.Println("Cannot use both --require-ssl and --no-ssl")
 		return
 	}
 
@@ -696,13 +697,13 @@ func updateMySQLUser(username string, privileges string, maxConnections int, req
 	hostCmd := fmt.Sprintf("SELECT DISTINCT Host FROM mysql.user WHERE User='%s';", username)
 	output, err := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-sNe", hostCmd).Output()
 	if err != nil {
-		fmt.Printf("❌ User not found: %s\n", username)
+		fmt.Printf("User not found: %s\n", username)
 		return
 	}
 
 	hosts := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(hosts) == 0 || hosts[0] == "" {
-		fmt.Printf("❌ User '%s' not found\n", username)
+		fmt.Printf("User '%s' not found\n", username)
 		return
 	}
 
@@ -728,11 +729,11 @@ func updateMySQLUser(username string, privileges string, maxConnections int, req
 			grantCmd := fmt.Sprintf("GRANT %s ON *.* TO '%s'@'%s' WITH GRANT OPTION;", privStr, username, host)
 			mysqlCmd = exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", grantCmd)
 			if err := mysqlCmd.Run(); err != nil {
-				fmt.Printf("⚠️  Could not update privileges for %s@%s: %v\n", username, host, err)
+				fmt.Printf("Could not update privileges for %s@%s: %v\n", username, host, err)
 				continue
 			}
 
-			fmt.Printf("✅ Privileges updated for '%s'@'%s': %s\n", username, host, privileges)
+			fmt.Printf("Privileges updated for '%s'@'%s': %s\n", username, host, privileges)
 			updated = true
 		}
 	}
@@ -768,22 +769,22 @@ func updateMySQLUser(username string, privileges string, maxConnections int, req
 
 			mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", alterCmd)
 			if err := mysqlCmd.Run(); err != nil {
-				fmt.Printf("⚠️  Warning: Could not update settings for %s@%s: %v\n", username, host, err)
+				fmt.Printf("Warning: Could not update settings for %s@%s: %v\n", username, host, err)
 				continue
 			}
 
 			updated = true
 			if requireSSL {
-				fmt.Printf("🔒 SSL/TLS now required for '%s'@'%s'\n", username, host)
+				fmt.Printf("SSL/TLS now required for '%s'@'%s'\n", username, host)
 			}
 			if noSSL {
-				fmt.Printf("🔓 SSL/TLS requirement removed for '%s'@'%s'\n", username, host)
+				fmt.Printf("SSL/TLS requirement removed for '%s'@'%s'\n", username, host)
 			}
 			if maxConnections >= 0 {
 				if maxConnections == 0 {
-					fmt.Printf("♾️  Max connections set to unlimited for '%s'@'%s'\n", username, host)
+					fmt.Printf("Max connections set to unlimited for '%s'@'%s'\n", username, host)
 				} else {
-					fmt.Printf("📊 Max connections/hour set to %d for '%s'@'%s'\n", maxConnections, username, host)
+					fmt.Printf("Max connections/hour set to %d for '%s'@'%s'\n", maxConnections, username, host)
 				}
 			}
 		}
@@ -795,14 +796,14 @@ func updateMySQLUser(username string, privileges string, maxConnections int, req
 	mysqlCmd.Run()
 
 	if !updated {
-		fmt.Println("⚠️  No changes specified. Use --privileges, --max-connections, --require-ssl, or --no-ssl")
+		fmt.Println("No changes specified. Use --privileges, --max-connections, --require-ssl, or --no-ssl")
 	} else {
-		fmt.Println("✅ User settings updated successfully")
+		fmt.Println("User settings updated successfully")
 	}
 }
 
 func showMySQLUserInfo(username string) {
-	fmt.Printf("👤 MySQL User Information: %s\n", username)
+	fmt.Printf("MySQL User Information: %s\n", username)
 	fmt.Println("─────────────────────────────────────────")
 
 	// Load config to get admin password from defaults
@@ -818,7 +819,7 @@ func showMySQLUserInfo(username string) {
 	}
 
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -826,7 +827,7 @@ func showMySQLUserInfo(username string) {
 	hostsCmd := fmt.Sprintf("SELECT Host FROM mysql.user WHERE User='%s';", username)
 	output, err := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-sNe", hostsCmd).Output()
 	if err != nil {
-		fmt.Printf("❌ User not found: %s\n", username)
+		fmt.Printf("User not found: %s\n", username)
 		return
 	}
 
@@ -839,7 +840,7 @@ func showMySQLUserInfo(username string) {
 			continue
 		}
 
-		fmt.Printf("\n🖥️  Host: %s\n", host)
+		fmt.Printf("\nHost: %s\n", host)
 
 		// Get grants
 		grantsCmd := fmt.Sprintf("SHOW GRANTS FOR '%s'@'%s';", username, host)
@@ -856,7 +857,7 @@ func showMySQLUserInfo(username string) {
 }
 
 func showPostgresqlUserInfo(username string) {
-	fmt.Printf("👤 PostgreSQL User Information: %s\n", username)
+	fmt.Printf("PostgreSQL User Information: %s\n", username)
 	fmt.Println("─────────────────────────────────────────")
 
 	// List user info using \du in PostgreSQL
@@ -878,13 +879,13 @@ func showPostgresqlUserInfo(username string) {
 	}
 
 	if !found {
-		fmt.Printf("❌ User '%s' not found\n", username)
+		fmt.Printf("User '%s' not found\n", username)
 	}
 }
 
 // MySQL/MariaDB database functions
 func createMySQLDatabase(dbName, charset, collation string) {
-	fmt.Printf("📦 Creating MySQL database '%s'...\n", dbName)
+	fmt.Printf("Creating MySQL database '%s'...\n", dbName)
 
 	cfg, err := config.Load()
 	var adminPass string
@@ -898,7 +899,7 @@ func createMySQLDatabase(dbName, charset, collation string) {
 	}
 
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -906,27 +907,27 @@ func createMySQLDatabase(dbName, charset, collation string) {
 
 	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", createCmd)
 	if err := mysqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error creating database: %v\n", err)
+		fmt.Printf("Error creating database: %v\n", err)
 		return
 	}
 
-	fmt.Printf("✅ Database '%s' created successfully\n", dbName)
+	fmt.Printf("Database '%s' created successfully\n", dbName)
 	fmt.Printf("   Charset: %s | Collation: %s\n", charset, collation)
 }
 
 func deleteMySQLDatabase(dbName string, force bool) {
 	if !force {
-		fmt.Printf("⚠️  Are you sure you want to delete database '%s'? This cannot be undone!\n", dbName)
+		fmt.Printf("Are you sure you want to delete database '%s'? This cannot be undone!\n", dbName)
 		fmt.Print("Type 'yes' to confirm: ")
 		var confirm string
 		fmt.Scanln(&confirm)
 		if confirm != "yes" {
-			fmt.Println("❌ Deletion cancelled")
+			fmt.Println("Deletion cancelled")
 			return
 		}
 	}
 
-	fmt.Printf("🗑️  Deleting MySQL database '%s'...\n", dbName)
+	fmt.Printf("Deleting MySQL database '%s'...\n", dbName)
 
 	cfg, err := config.Load()
 	var adminPass string
@@ -940,7 +941,7 @@ func deleteMySQLDatabase(dbName string, force bool) {
 	}
 
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -948,15 +949,15 @@ func deleteMySQLDatabase(dbName string, force bool) {
 
 	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", deleteCmd)
 	if err := mysqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error deleting database: %v\n", err)
+		fmt.Printf("Error deleting database: %v\n", err)
 		return
 	}
 
-	fmt.Printf("✅ Database '%s' deleted successfully\n", dbName)
+	fmt.Printf("Database '%s' deleted successfully\n", dbName)
 }
 
 func listMySQLDatabases() {
-	fmt.Println("📚 MySQL Databases:")
+	fmt.Println("MySQL Databases:")
 	fmt.Println("─────────────────────────────────────────")
 
 	cfg, err := config.Load()
@@ -971,7 +972,7 @@ func listMySQLDatabases() {
 	}
 
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -988,14 +989,14 @@ func listMySQLDatabases() {
 	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-e", query)
 	output, err := mysqlCmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("❌ Error listing databases: %v\n", err)
+		fmt.Printf("Error listing databases: %v\n", err)
 		return
 	}
 	fmt.Print(string(output))
 }
 
 func showMySQLDatabaseInfo(dbName string) {
-	fmt.Printf("📦 MySQL Database Information: %s\n", dbName)
+	fmt.Printf("MySQL Database Information: %s\n", dbName)
 	fmt.Println("─────────────────────────────────────────")
 
 	cfg, err := config.Load()
@@ -1010,7 +1011,7 @@ func showMySQLDatabaseInfo(dbName string) {
 	}
 
 	if adminPass == "" {
-		fmt.Print("🔐 Enter MySQL/MariaDB admin password: ")
+		fmt.Print("Enter MySQL/MariaDB admin password: ")
 		fmt.Scanln(&adminPass)
 	}
 
@@ -1018,7 +1019,7 @@ func showMySQLDatabaseInfo(dbName string) {
 	checkCmd := fmt.Sprintf("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s';", dbName)
 	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+adminPass, "-sNe", checkCmd)
 	if err := mysqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Database '%s' not found\n", dbName)
+		fmt.Printf("Database '%s' not found\n", dbName)
 		return
 	}
 
@@ -1039,33 +1040,33 @@ func showMySQLDatabaseInfo(dbName string) {
 
 // PostgreSQL database functions
 func createPostgresqlDatabase(dbName, owner string) {
-	fmt.Printf("📦 Creating PostgreSQL database '%s'...\n", dbName)
+	fmt.Printf("Creating PostgreSQL database '%s'...\n", dbName)
 
 	createCmd := fmt.Sprintf("CREATE DATABASE \"%s\" OWNER %s;", dbName, owner)
 
 	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", createCmd)
 	if err := psqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error creating database: %v\n", err)
+		fmt.Printf("Error creating database: %v\n", err)
 		return
 	}
 
-	fmt.Printf("✅ PostgreSQL database '%s' created successfully\n", dbName)
+	fmt.Printf("PostgreSQL database '%s' created successfully\n", dbName)
 	fmt.Printf("   Owner: %s\n", owner)
 }
 
 func deletePostgresqlDatabase(dbName string, force bool) {
 	if !force {
-		fmt.Printf("⚠️  Are you sure you want to delete database '%s'? This cannot be undone!\n", dbName)
+		fmt.Printf("Are you sure you want to delete database '%s'? This cannot be undone!\n", dbName)
 		fmt.Print("Type 'yes' to confirm: ")
 		var confirm string
 		fmt.Scanln(&confirm)
 		if confirm != "yes" {
-			fmt.Println("❌ Deletion cancelled")
+			fmt.Println("Deletion cancelled")
 			return
 		}
 	}
 
-	fmt.Printf("🗑️  Deleting PostgreSQL database '%s'...\n", dbName)
+	fmt.Printf("Deleting PostgreSQL database '%s'...\n", dbName)
 
 	// Terminate connections first
 	terminateCmd := fmt.Sprintf(`
@@ -1081,15 +1082,15 @@ func deletePostgresqlDatabase(dbName string, force bool) {
 	dropCmd := fmt.Sprintf("DROP DATABASE IF EXISTS \"%s\";", dbName)
 	psqlCmd = exec.Command("sudo", "-u", "postgres", "psql", "-c", dropCmd)
 	if err := psqlCmd.Run(); err != nil {
-		fmt.Printf("❌ Error deleting database: %v\n", err)
+		fmt.Printf("Error deleting database: %v\n", err)
 		return
 	}
 
-	fmt.Printf("✅ PostgreSQL database '%s' deleted successfully\n", dbName)
+	fmt.Printf("PostgreSQL database '%s' deleted successfully\n", dbName)
 }
 
 func listPostgresqlDatabases() {
-	fmt.Println("📚 PostgreSQL Databases:")
+	fmt.Println("PostgreSQL Databases:")
 	fmt.Println("─────────────────────────────────────────")
 
 	query := `\l`
@@ -1097,14 +1098,14 @@ func listPostgresqlDatabases() {
 	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", query)
 	output, err := psqlCmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("❌ Error listing databases: %v\n", err)
+		fmt.Printf("Error listing databases: %v\n", err)
 		return
 	}
 	fmt.Print(string(output))
 }
 
 func showPostgresqlDatabaseInfo(dbName string) {
-	fmt.Printf("📦 PostgreSQL Database Information: %s\n", dbName)
+	fmt.Printf("PostgreSQL Database Information: %s\n", dbName)
 	fmt.Println("─────────────────────────────────────────")
 
 	// Connect to specific database and get info
@@ -1118,7 +1119,7 @@ func showPostgresqlDatabaseInfo(dbName string) {
 	psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", query)
 	output, err := psqlCmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("❌ Error retrieving database info: %v\n", err)
+		fmt.Printf("Error retrieving database info: %v\n", err)
 		return
 	}
 	fmt.Print(string(output))
@@ -1126,7 +1127,7 @@ func showPostgresqlDatabaseInfo(dbName string) {
 
 func init() {
 	rootCmd.AddCommand(dbCmd)
-	
+
 	// User management commands
 	dbCmd.AddCommand(dbUserCmd)
 	dbUserCmd.AddCommand(dbUserCreateCmd)
@@ -1135,14 +1136,14 @@ func init() {
 	dbUserCmd.AddCommand(dbUserPasswordCmd)
 	dbUserCmd.AddCommand(dbUserUpdateCmd)
 	dbUserCmd.AddCommand(dbUserInfoCmd)
-	
+
 	// Database management commands
 	dbCmd.AddCommand(dbDatabaseCmd)
 	dbDatabaseCmd.AddCommand(dbDatabaseCreateCmd)
 	dbDatabaseCmd.AddCommand(dbDatabaseDeleteCmd)
 	dbDatabaseCmd.AddCommand(dbDatabaseListCmd)
 	dbDatabaseCmd.AddCommand(dbDatabaseInfoCmd)
-	
+
 	// Initialize flags
 	init_dbUserCreateCmd()
 	init_dbUserUpdateCmd()

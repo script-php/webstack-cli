@@ -42,7 +42,7 @@ var configSetCmd = &cobra.Command{
 				}
 			}
 			if !valid {
-				fmt.Printf("❌ Invalid PHP version: %s\n", value)
+				fmt.Printf("Invalid PHP version: %s\n", value)
 				fmt.Printf("Valid versions: %v\n", validVersions)
 				return
 			}
@@ -52,30 +52,30 @@ var configSetCmd = &cobra.Command{
 			checkCmd := exec.Command("systemctl", "is-enabled", phpFpmService)
 			err := checkCmd.Run()
 			if err != nil {
-				fmt.Printf("❌ PHP %s is not installed\n", value)
-				fmt.Println("⚠️  Use 'webstack install php [version]' to install it first")
+				fmt.Printf("PHP %s is not installed\n", value)
+				fmt.Println("Use 'webstack install php [version]' to install it first")
 				return
 			}
 
 			cfg.SetDefault("php_version", value)
-			fmt.Printf("✅ Default PHP version set to %s\n", value)
+			fmt.Printf("Default PHP version set to %s\n", value)
 
 		case "ssl_provider":
 			if value != "letsencrypt" && value != "custom" {
-				fmt.Printf("❌ Invalid SSL provider: %s\n", value)
+				fmt.Printf("Invalid SSL provider: %s\n", value)
 				fmt.Println("Valid providers: letsencrypt, custom")
 				return
 			}
 			cfg.SetDefault("ssl_provider", value)
-			fmt.Printf("✅ Default SSL provider set to %s\n", value)
+			fmt.Printf("Default SSL provider set to %s\n", value)
 
 		default:
-			fmt.Printf("❌ Unknown configuration key: %s\n", key)
+			fmt.Printf("Unknown configuration key: %s\n", key)
 			return
 		}
 
 		if err := cfg.Save(); err != nil {
-			fmt.Printf("❌ Error saving config: %v\n", err)
+			fmt.Printf("Error saving config: %v\n", err)
 			return
 		}
 	},
@@ -99,7 +99,7 @@ var configGetCmd = &cobra.Command{
 
 		value := cfg.GetDefault(key, nil)
 		if value == nil {
-			fmt.Printf("⚠️  Configuration key '%s' not found\n", key)
+			fmt.Printf("Configuration key '%s' not found\n", key)
 			return
 		}
 
@@ -118,8 +118,8 @@ var configShowCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println("📋 WebStack Configuration")
-		fmt.Println("========================")
+		fmt.Println("WebStack Configuration")
+		fmt.Println("======================")
 		fmt.Printf("Version: %s\n", cfg.Version)
 		fmt.Println("\nDefaults:")
 		for key, value := range cfg.Defaults {
@@ -127,9 +127,9 @@ var configShowCmd = &cobra.Command{
 		}
 		fmt.Println("\nServers:")
 		for name, srv := range cfg.Servers {
-			status := "❌ Not installed"
+			status := "Not installed"
 			if srv.Installed {
-				status = "✅ Installed"
+				status = "Installed"
 			}
 			fmt.Printf("  %s: %s (Port: %d, Mode: %s)\n", name, status, srv.Port, srv.Mode)
 		}
