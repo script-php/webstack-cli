@@ -385,10 +385,6 @@ func init_dbUserUpdateCmd() {
 }
 
 // MySQL/MariaDB user management functions
-func createMySQLUser(username, password, host string) {
-	createMySQLUserWithOptions(username, password, host, "ALL", "*", 0, false)
-}
-
 func createMySQLUserWithOptions(username, password, host, privileges, database string, maxConnections int, requireSSL bool) {
 	fmt.Printf("👤 Creating MySQL user '%s'@'%s'...\n", username, host)
 

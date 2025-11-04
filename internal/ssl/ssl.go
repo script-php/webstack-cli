@@ -426,7 +426,6 @@ func promptEmail() string {
 }
 
 func domainExists(domainName string) bool {
-	// TODO: Check if domain exists in domain configuration
 	return domain.DomainExists(domainName)
 }
 
@@ -984,7 +983,7 @@ func triggerRenewal() {
 
 	// Run certbot renew with verbose output for testing
 	fmt.Println("\n📋 Running: certbot renew --deploy-hook 'systemctl reload nginx || true; systemctl reload apache2 || true'")
-	fmt.Println("   Note: This will only renew certificates expiring within 30 days\n")
+	fmt.Println("   Note: This will only renew certificates expiring within 30 days")
 
 	cmd := exec.Command("certbot", "renew", "--deploy-hook", "systemctl reload nginx || true; systemctl reload apache2 || true")
 	cmd.Stdout = os.Stdout

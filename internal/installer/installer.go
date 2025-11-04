@@ -1655,7 +1655,6 @@ func runCommand(name string, args ...string) error {
 }
 
 func configureNginx() {
-	// TODO: Apply Nginx configuration from templates
 	fmt.Println("⚙️  Configuring Nginx...")
 
 	// Read template from embedded filesystem

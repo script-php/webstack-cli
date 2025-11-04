@@ -897,7 +897,7 @@ func disablePostgreSQLRemoteAccess() {
 	fmt.Scanln(&resetPass)
 
 	if resetPass == "y" || resetPass == "Y" {
-		fmt.Print("Enter new password for user '%s': ")
+		fmt.Printf("Enter new password for user '%s': ", dbUser)
 		var password string
 		fmt.Scanln(&password)
 
