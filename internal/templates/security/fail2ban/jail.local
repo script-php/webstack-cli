@@ -1,0 +1,19 @@
+[DEFAULT]
+# Ban for 1 hour
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[exim]
+enabled = true
+port    = smtp,ssmtp,submission
+filter  = exim
+logpath = /var/log/exim4/mainlog
+
+[dovecot]
+enabled = true
+port    = pop3,pop3s,imap,imaps,submission,465,587
+filter  = dovecot
+logpath = /var/log/dovecot.log
+
+# Optionally protect dovecot-auth and other services

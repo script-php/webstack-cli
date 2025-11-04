@@ -49,12 +49,12 @@ var remoteAccessCmd = &cobra.Command{
 var remoteAccessEnableCmd = &cobra.Command{
 	Use:   "enable [database] [user] [password]",
 	Short: "Enable remote access for a database",
-	Long:  `Enable remote connections for MySQL, MariaDB, or PostgreSQL.
+	Long: `Enable remote connections for MySQL, MariaDB, or PostgreSQL.
 Usage: 
   webstack system remote-access enable mysql (interactive prompts)
   webstack system remote-access enable mysql root rootpass (with args)
   webstack system remote-access enable mysql appuser apppass`,
-	Args:  cobra.MinimumNArgs(1),
+	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		dbType := strings.ToLower(args[0])
 		var user, password string
@@ -71,11 +71,11 @@ Usage:
 var remoteAccessDisableCmd = &cobra.Command{
 	Use:   "disable [database] [user]",
 	Short: "Disable remote access for a database",
-	Long:  `Disable remote connections for MySQL, MariaDB, or PostgreSQL.
+	Long: `Disable remote connections for MySQL, MariaDB, or PostgreSQL.
 Usage:
   webstack system remote-access disable mysql (interactive prompts)
   webstack system remote-access disable mysql root (with user)`,
-	Args:  cobra.MinimumNArgs(1),
+	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		dbType := strings.ToLower(args[0])
 		var user string
@@ -484,7 +484,7 @@ func enableMySQLRemoteAccess() {
 	fmt.Printf("✓ Granting privileges to %s@%s...\n", dbUser, hostPattern)
 	grantCmd := fmt.Sprintf("GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' IDENTIFIED BY '%s' WITH GRANT OPTION; FLUSH PRIVILEGES;",
 		dbUser, hostPattern, userPassword)
-	
+
 	mysqlCmd := exec.Command("mysql", "-u", adminUser, "-p"+adminPassword, "-e", grantCmd)
 	if err := mysqlCmd.Run(); err != nil {
 		fmt.Printf("❌ Error granting privileges: %v\n", err)
@@ -492,6 +492,14 @@ func enableMySQLRemoteAccess() {
 		fmt.Printf("   mysql -u %s -p -e \"GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION; FLUSH PRIVILEGES;\"\n", adminUser, dbUser, hostPattern)
 		return
 	}
+
+	// Open firewall port 3306 for MySQL/MariaDB
+	fmt.Println("🔥 Opening firewall port 3306 for MySQL/MariaDB...")
+	exec.Command("iptables", "-A", "INPUT", "-p", "tcp", "--dport", "3306", "-j", "ACCEPT").Run()
+	exec.Command("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", "3306", "-j", "ACCEPT").Run()
+	// Persist rules
+	exec.Command("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true").Run()
+	exec.Command("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true").Run()
 
 	fmt.Printf("✅ Remote access enabled for %s\n", service)
 	fmt.Printf("   Listening on: %s:3306\n", bindAddress)
@@ -564,13 +572,21 @@ func disableMySQLRemoteAccess() {
 	// Revoke remote privileges and keep only localhost
 	fmt.Printf("✓ Revoking remote access privileges for %s...\n", dbUser)
 	revokeCmd := fmt.Sprintf("DELETE FROM mysql.user WHERE User='%s' AND Host NOT IN ('localhost', '127.0.0.1', '::1'); FLUSH PRIVILEGES;", dbUser)
-	
+
 	mysqlCmd := exec.Command("mysql", "-u", adminUser, "-p"+adminPassword, "-e", revokeCmd)
 	if err := mysqlCmd.Run(); err != nil {
 		fmt.Printf("⚠️  Warning: Could not revoke remote privileges: %v\n", err)
 		fmt.Println("   You may need to run manually:")
 		fmt.Printf("   mysql -u %s -p -e \"DELETE FROM mysql.user WHERE User='%s' AND Host NOT IN ('localhost', '127.0.0.1', '::1'); FLUSH PRIVILEGES;\"\n", adminUser, dbUser)
 	}
+
+	// Close firewall port 3306 for MySQL/MariaDB
+	fmt.Println("🔒 Closing firewall port 3306...")
+	exec.Command("iptables", "-D", "INPUT", "-p", "tcp", "--dport", "3306", "-j", "ACCEPT").Run()
+	exec.Command("ip6tables", "-D", "INPUT", "-p", "tcp", "--dport", "3306", "-j", "ACCEPT").Run()
+	// Persist rules
+	exec.Command("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true").Run()
+	exec.Command("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true").Run()
 
 	fmt.Printf("✅ Remote access disabled for %s (localhost only)\n", service)
 }
@@ -628,7 +644,7 @@ func enableMySQLRemoteAccessWithArgs(user, password string) {
 	fmt.Printf("✓ Granting privileges to %s@%s...\n", user, hostPattern)
 	grantCmd := fmt.Sprintf("GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' IDENTIFIED BY '%s' WITH GRANT OPTION; FLUSH PRIVILEGES;",
 		user, hostPattern, password)
-	
+
 	mysqlCmd := exec.Command("mysql", "-u", "root", "-p"+password, "-e", grantCmd)
 	if err := mysqlCmd.Run(); err != nil {
 		// Try with the provided user as admin
@@ -825,6 +841,14 @@ func enablePostgreSQLRemoteAccess() {
 		fmt.Printf("   sudo -u postgres psql -c \"ALTER USER %s WITH PASSWORD 'your_password';\"\n", dbUser)
 	}
 
+	// Open firewall port 5432 for PostgreSQL
+	fmt.Println("🔥 Opening firewall port 5432 for PostgreSQL...")
+	exec.Command("iptables", "-A", "INPUT", "-p", "tcp", "--dport", "5432", "-j", "ACCEPT").Run()
+	exec.Command("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", "5432", "-j", "ACCEPT").Run()
+	// Persist rules
+	exec.Command("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true").Run()
+	exec.Command("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true").Run()
+
 	fmt.Println("✅ Remote access enabled for PostgreSQL")
 	fmt.Printf("   Listening on: 0.0.0.0:5432 (from %s)\n", cidrAddress)
 	fmt.Printf("   User '%s' can connect from: psql -U %s -h <server-ip> -d postgres\n", dbUser, dbUser)
@@ -871,18 +895,26 @@ func disablePostgreSQLRemoteAccess() {
 	fmt.Print("Reset password for user? (y/n, default: n): ")
 	var resetPass string
 	fmt.Scanln(&resetPass)
-	
+
 	if resetPass == "y" || resetPass == "Y" {
 		fmt.Print("Enter new password for user '%s': ")
 		var password string
 		fmt.Scanln(&password)
-		
+
 		resetCmd := fmt.Sprintf("ALTER USER %s WITH PASSWORD '%s';", dbUser, password)
 		psqlCmd := exec.Command("sudo", "-u", "postgres", "psql", "-c", resetCmd)
 		if err := psqlCmd.Run(); err != nil {
 			fmt.Printf("⚠️  Warning: Could not reset password: %v\n", err)
 		}
 	}
+
+	// Close firewall port 5432 for PostgreSQL
+	fmt.Println("🔒 Closing firewall port 5432...")
+	exec.Command("iptables", "-D", "INPUT", "-p", "tcp", "--dport", "5432", "-j", "ACCEPT").Run()
+	exec.Command("ip6tables", "-D", "INPUT", "-p", "tcp", "--dport", "5432", "-j", "ACCEPT").Run()
+	// Persist rules
+	exec.Command("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true").Run()
+	exec.Command("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true").Run()
 
 	fmt.Printf("✅ Remote access disabled for PostgreSQL (localhost only)\n")
 	fmt.Printf("   User '%s' - remote connections revoked\n", dbUser)
@@ -1012,6 +1044,49 @@ func checkPostgreSQLRemoteAccessStatus() {
 	}
 }
 
+func setupCoreSecurity() {
+	fmt.Println("🔒 Setting up core security infrastructure...")
+
+	// Core security packages - installed once for all components
+	coreSecurityPkgs := []string{
+		"iptables",            // Kernel firewall engine
+		"iptables-persistent", // Persist firewall rules across reboot
+		"ipset",               // Efficient IP list management
+		"fail2ban",            // Automatic brute-force protection
+	}
+
+	// Update package list
+	fmt.Println("   Updating package list...")
+	exec.Command("apt", "update").Run()
+
+	// Install core security packages
+	fmt.Println("   Installing security packages...")
+	args := append([]string{"install", "-y", "--no-install-recommends"}, coreSecurityPkgs...)
+	if err := exec.Command("apt", args...).Run(); err != nil {
+		fmt.Printf("⚠️  Warning installing security packages: %v\n", err)
+		// Don't return - these might already be installed
+	}
+
+	// Ensure SSH port 22 is always allowed (prevent lockout)
+	fmt.Println("   Ensuring SSH access...")
+	exec.Command("iptables", "-A", "INPUT", "-p", "tcp", "--dport", "22", "-j", "ACCEPT").Run()
+	exec.Command("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", "22", "-j", "ACCEPT").Run()
+
+	// Allow localhost traffic (always safe)
+	exec.Command("iptables", "-A", "INPUT", "-i", "lo", "-j", "ACCEPT").Run()
+	exec.Command("ip6tables", "-A", "INPUT", "-i", "lo", "-j", "ACCEPT").Run()
+
+	// Allow established/related connections (traffic from existing connections)
+	exec.Command("iptables", "-A", "INPUT", "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT").Run()
+	exec.Command("ip6tables", "-A", "INPUT", "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT").Run()
+
+	// Persist rules
+	exec.Command("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true").Run()
+	exec.Command("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true").Run()
+
+	fmt.Println("✓ Core security packages ready (iptables, ipset, fail2ban)")
+	fmt.Println("✓ SSH access preserved (port 22 allowed)")
+}
 
 func init() {
 	rootCmd.AddCommand(systemCmd)

@@ -105,7 +105,7 @@ func checkComponentStatus(component Component) ComponentStatus {
 		}
 		return NotInstalled
 	}
-	
+
 	// For other check commands, use exit code
 	cmd := exec.Command(component.CheckCmd[0], component.CheckCmd[1:]...)
 	err := cmd.Run()
@@ -192,7 +192,7 @@ func improvedAskYesNo(question string) bool {
 func cleanupMySQLMariaDB() {
 	fmt.Println("\n🚀 NUCLEAR CLEANUP - REMOVING ALL MYSQL/MARIADB")
 	fmt.Println("================================================== ")
-	
+
 	// Kill everything
 	fmt.Println("🔪 Killing all processes...")
 	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
@@ -201,20 +201,20 @@ func cleanupMySQLMariaDB() {
 	runCommandQuiet("bash", "-c", "pkill -9 apt 2>/dev/null; true")
 	runCommandQuiet("bash", "-c", "pkill -9 dpkg 2>/dev/null; true")
 	time.Sleep(1 * time.Second)
-	
+
 	// Remove policy-rc.d block
 	fmt.Println("🗑️  Removing policy blocks...")
 	os.Remove("/usr/sbin/policy-rc.d")
-	
+
 	// Remove ALL lock files
 	fmt.Println("🔓 Removing lock files...")
 	os.Remove("/var/lib/dpkg/lock-frontend")
 	os.Remove("/var/lib/dpkg/lock")
 	os.Remove("/var/cache/apt/archives/lock")
-	
+
 	// Use bash to clean debconf locks with glob pattern
 	runCommandQuiet("bash", "-c", "rm -f /var/cache/debconf/*.dat /var/cache/debconf/*.old")
-	
+
 	// Remove ALL MySQL/MariaDB directories
 	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
 	runCommandQuiet("bash", "-c", "rm -rf /var/lib/mysql*")
@@ -222,22 +222,22 @@ func cleanupMySQLMariaDB() {
 	runCommandQuiet("bash", "-c", "rm -rf /etc/mysql*")
 	runCommandQuiet("bash", "-c", "rm -rf /run/mysqld*")
 	runCommandQuiet("bash", "-c", "rm -rf /run/mariadb*")
-	
+
 	// Reset dpkg state
 	fmt.Println("🔧 Resetting dpkg...")
 	runCommandQuiet("dpkg", "--configure", "-a")
-	
+
 	// Force remove any broken packages
 	fmt.Println("📦 Force removing packages...")
 	runCommandQuiet("bash", "-c", "dpkg -l | grep -i mysql | awk '{print $2}' | xargs -r dpkg --purge --force-all 2>/dev/null || true")
 	runCommandQuiet("bash", "-c", "dpkg -l | grep -i mariadb | awk '{print $2}' | xargs -r dpkg --purge --force-all 2>/dev/null || true")
-	
+
 	// Clean apt
 	fmt.Println("🧹 Cleaning apt...")
 	runCommandQuiet("apt", "clean")
 	runCommandQuiet("apt", "autoclean", "-y")
 	runCommandQuiet("apt", "autoremove", "-y")
-	
+
 	// Final verification
 	fmt.Println("")
 	fmt.Println("✅ CLEANUP COMPLETE - Verification:")
@@ -249,7 +249,7 @@ func cleanupMySQLMariaDB() {
 	} else {
 		fmt.Printf("    ⚠️  %s packages still present\n", strings.TrimSpace(string(output)))
 	}
-	
+
 	fmt.Println("  Running processes:")
 	cmd = exec.Command("bash", "-c", "ps aux | grep -iE 'mysqld|mariadbd|mysql|mariadb' | grep -v grep | wc -l")
 	output, _ = cmd.Output()
@@ -258,7 +258,7 @@ func cleanupMySQLMariaDB() {
 	} else {
 		fmt.Printf("    ⚠️  %s processes still running\n", strings.TrimSpace(string(output)))
 	}
-	
+
 	// Ask for reboot
 	fmt.Println("")
 	if improvedAskYesNo("⚠️  A system reboot is recommended to ensure all MySQL/MariaDB processes are terminated. Reboot now?") {
@@ -273,7 +273,7 @@ func cleanupMySQLMariaDB() {
 func cleanupPostgreSQL() {
 	fmt.Println("\n🧨 NUCLEAR CLEANUP MODE - PostgreSQL")
 	fmt.Println("This will aggressively remove all PostgreSQL traces...")
-	
+
 	// Kill everything
 	fmt.Println("🔪 Killing all PostgreSQL processes...")
 	runCommandQuiet("bash", "-c", "pkill -9 postgres 2>/dev/null; true")
@@ -281,7 +281,7 @@ func cleanupPostgreSQL() {
 	runCommandQuiet("bash", "-c", "pkill -9 apt 2>/dev/null; true")
 	runCommandQuiet("bash", "-c", "pkill -9 dpkg 2>/dev/null; true")
 	time.Sleep(1 * time.Second)
-	
+
 	// Remove ALL PostgreSQL directories
 	fmt.Println("🗑️  Removing all PostgreSQL directories...")
 	runCommandQuiet("bash", "-c", "rm -rf /var/lib/postgresql*")
@@ -289,21 +289,21 @@ func cleanupPostgreSQL() {
 	runCommandQuiet("bash", "-c", "rm -rf /etc/postgresql*")
 	runCommandQuiet("bash", "-c", "rm -rf /run/postgresql*")
 	runCommandQuiet("bash", "-c", "rm -rf /home/postgres")
-	
+
 	// Reset dpkg state
 	fmt.Println("🔧 Repairing dpkg state...")
 	runCommandQuiet("dpkg", "--configure", "-a")
-	
+
 	// Force remove all PostgreSQL packages
 	fmt.Println("💣 Force removing PostgreSQL packages...")
 	runCommandQuiet("dpkg", "--purge", "--force-all", "postgresql", "postgresql-contrib", "postgresql-client", "postgresql-common")
 	runCommandQuiet("apt", "autoremove", "-y")
-	
+
 	// Clean apt cache
 	fmt.Println("🧹 Cleaning APT cache...")
 	runCommandQuiet("apt", "clean")
 	runCommandQuiet("apt", "autoclean")
-	
+
 	// Final verification
 	fmt.Println("")
 	fmt.Println("✅ CLEANUP COMPLETE - Verification:")
@@ -315,7 +315,7 @@ func cleanupPostgreSQL() {
 	} else {
 		fmt.Printf("    ⚠️  %s packages still present\n", strings.TrimSpace(string(output)))
 	}
-	
+
 	fmt.Println("  Running processes:")
 	cmd = exec.Command("bash", "-c", "ps aux | grep -iE 'postgres' | grep -v grep | wc -l")
 	output, _ = cmd.Output()
@@ -324,7 +324,7 @@ func cleanupPostgreSQL() {
 	} else {
 		fmt.Printf("    ⚠️  %s processes still running\n", strings.TrimSpace(string(output)))
 	}
-	
+
 	// Ask for reboot
 	fmt.Println("")
 	if improvedAskYesNo("⚠️  A system reboot is recommended to ensure all PostgreSQL processes are terminated. Reboot now?") {
@@ -348,14 +348,14 @@ func uninstallComponent(component Component) error {
 	// For MySQL/MariaDB, do aggressive cleanup of data directories first
 	if component.PackageName == "mysql-server" || component.PackageName == "mariadb-server" {
 		fmt.Println("🧹 Cleaning MySQL/MariaDB data directories...")
-		
+
 		// Remove all MySQL/MariaDB data directories using glob patterns
 		// This ensures we remove /var/lib/mysql, /var/lib/mysql-8.0, /var/lib/mysql-files, etc.
-		runCommandQuiet("bash", "-c", "rm -rf /var/lib/mysql*")      // Catches mysql, mysql-8.0, mysql-files, etc.
-		runCommandQuiet("bash", "-c", "rm -rf /var/log/mysql*")      // Catches mysql, mysql-files logs, etc.
-		runCommandQuiet("bash", "-c", "rm -rf /etc/mysql*")          // Catches mysql, mysqlrouter configs, etc.
-		runCommandQuiet("bash", "-c", "rm -rf /run/mysqld*")         // Catches mysqld, mysqld_safe, etc.
-		
+		runCommandQuiet("bash", "-c", "rm -rf /var/lib/mysql*") // Catches mysql, mysql-8.0, mysql-files, etc.
+		runCommandQuiet("bash", "-c", "rm -rf /var/log/mysql*") // Catches mysql, mysql-files logs, etc.
+		runCommandQuiet("bash", "-c", "rm -rf /etc/mysql*")     // Catches mysql, mysqlrouter configs, etc.
+		runCommandQuiet("bash", "-c", "rm -rf /run/mysqld*")    // Catches mysqld, mysqld_safe, etc.
+
 		// Clean package cache to prevent stale files
 		runCommandQuiet("apt", "clean")
 		runCommandQuiet("apt", "autoclean")
@@ -364,13 +364,13 @@ func uninstallComponent(component Component) error {
 	// For PostgreSQL, do aggressive cleanup of data directories first
 	if component.PackageName == "postgresql" {
 		fmt.Println("🧹 Cleaning PostgreSQL data directories...")
-		
+
 		// Remove all PostgreSQL data directories using glob patterns
 		runCommandQuiet("bash", "-c", "rm -rf /var/lib/postgresql*")
 		runCommandQuiet("bash", "-c", "rm -rf /var/log/postgresql*")
 		runCommandQuiet("bash", "-c", "rm -rf /etc/postgresql*")
 		runCommandQuiet("bash", "-c", "rm -rf /run/postgresql*")
-		
+
 		// Clean package cache to prevent stale files
 		runCommandQuiet("apt", "clean")
 		runCommandQuiet("apt", "autoclean")
@@ -381,27 +381,27 @@ func uninstallComponent(component Component) error {
 	cmd.Env = append(os.Environ(),
 		"DEBIAN_FRONTEND=noninteractive",
 		"DEBCONF_NONINTERACTIVE_SEEN=true")
-	
+
 	// Repair dpkg database BEFORE purge to ensure clean state
 	fmt.Println("🔧 Repairing dpkg database state (before)...")
 	runCommandQuiet("dpkg", "--configure", "-a")
-	
+
 	aptPurgeFailed := false
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("⚠️  apt purge returned error (may not be critical): %v\n", err)
 		aptPurgeFailed = true
 	}
-	
+
 	// Repair dpkg database AFTER purge to fix any issues from uninstall
 	fmt.Println("🔧 Repairing dpkg database state (after)...")
 	runCommandQuiet("dpkg", "--configure", "-a")
-	
+
 	// For PostgreSQL, always run aggressive cleanup to ensure complete removal
 	if strings.Contains(component.PackageName, "postgresql") {
 		fmt.Println("🧹 Running PostgreSQL package cleanup...")
 		runCommandQuiet("dpkg", "--purge", "--force-all", "postgresql", "postgresql-contrib", "postgresql-client", "postgresql-common")
 		runCommandQuiet("apt", "autoremove", "-y")
-		
+
 		// Ask for reboot after PostgreSQL uninstall
 		fmt.Println("")
 		fmt.Println("✅ Uninstall completed")
@@ -411,20 +411,20 @@ func uninstallComponent(component Component) error {
 		} else {
 			fmt.Println("⚠️  Please manually reboot the system before reinstalling PostgreSQL")
 		}
-		
+
 		// Return error if apt purge failed
 		if aptPurgeFailed {
 			return fmt.Errorf("apt purge had errors - running dpkg fallback")
 		}
 		return nil
 	}
-	
+
 	// Also try dpkg --purge as fallback for MySQL/MariaDB
 	if component.PackageName == "mysql-server" || component.PackageName == "mariadb-server" {
 		runCommandQuiet("dpkg", "--purge", "--force-all", "mysql-server", "mysql-client", "mysql-server-core", "mysql-client-core")
 		runCommandQuiet("dpkg", "--purge", "--force-all", "mariadb-server", "mariadb-client", "mariadb-server-core", "mariadb-client-core")
 		runCommandQuiet("apt", "autoremove", "-y")
-		
+
 		// Ask for reboot after MySQL/MariaDB uninstall
 		fmt.Println("")
 		fmt.Println("✅ Uninstall completed")
@@ -435,7 +435,7 @@ func uninstallComponent(component Component) error {
 			fmt.Println("⚠️  Please manually reboot the system before reinstalling MySQL/MariaDB")
 		}
 	}
-	
+
 	return nil
 }
 
@@ -550,7 +550,7 @@ func InstallNginx() {
 		fmt.Println("🔄 Apache detected - configuring for backend mode...")
 		// Stop Apache first
 		runCommand("systemctl", "stop", "apache2")
-		
+
 		// Regenerate Apache config for port 8080
 		apachePort := 8080
 		portConfContent := fmt.Sprintf(`# WebStack CLI - Apache Ports Configuration
@@ -572,7 +572,7 @@ Listen %d
 		} else {
 			fmt.Printf("✅ Apache reconfigured for port %d (backend mode)\n", apachePort)
 		}
-		
+
 		// Regenerate default VirtualHost for port 8080
 		if defaultConfig, err := templates.GetApacheTemplate("default.conf"); err == nil {
 			tmpl, err := template.New("apache-default").Parse(string(defaultConfig))
@@ -581,13 +581,13 @@ Listen %d
 				tmpl.Execute(&buf, map[string]interface{}{
 					"ApachePort": apachePort,
 				})
-				
+
 				if err := ioutil.WriteFile("/etc/apache2/sites-available/000-default.conf", []byte(buf.String()), 0644); err == nil {
 					fmt.Println("✅ Apache default VirtualHost updated for port 8080")
 				}
 			}
 		}
-		
+
 		// Update Apache config
 		if err := UpdateServerConfig("apache", true, 8080, "backend"); err != nil {
 			fmt.Printf("⚠️  Warning: Could not update Apache config: %v\n", err)
@@ -613,6 +613,19 @@ Listen %d
 			fmt.Println("✅ Apache restarted on port 8080")
 		}
 	}
+
+	// Configure firewall - open ports 80 and 443 for HTTP/HTTPS
+	fmt.Println("🔥 Configuring firewall for HTTP/HTTPS...")
+	webPorts := []int{80, 443}
+	for _, port := range webPorts {
+		portStr := fmt.Sprintf("%d", port)
+		// Add both IPv4 and IPv6 rules
+		runCommand("iptables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+		runCommand("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+	}
+	// Persist rules
+	runCommand("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true")
+	runCommand("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true")
 
 	// Update config with Nginx installation details
 	if err := UpdateServerConfig("nginx", true, port, mode); err != nil {
@@ -657,12 +670,25 @@ func InstallNginxVersion(version string) {
 	configureNginx()
 	runCommand("systemctl", "enable", "nginx")
 	runCommand("systemctl", "start", "nginx")
-	
+
+	// Configure firewall - open ports 80 and 443 for HTTP/HTTPS
+	fmt.Println("🔥 Configuring firewall for HTTP/HTTPS...")
+	webPorts := []int{80, 443}
+	for _, port := range webPorts {
+		portStr := fmt.Sprintf("%d", port)
+		// Add both IPv4 and IPv6 rules
+		runCommand("iptables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+		runCommand("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+	}
+	// Persist rules
+	runCommand("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true")
+	runCommand("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true")
+
 	// Update config to mark Nginx as installed and configured
 	if err := UpdateServerConfig("nginx", true, 80, "standalone"); err != nil {
 		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
-	
+
 	fmt.Printf("✅ Nginx %s installed successfully\n", version)
 }
 
@@ -731,6 +757,19 @@ func InstallApache() {
 		runCommand("systemctl", "start", "apache2")
 	}
 
+	// Configure firewall - open ports 80 and 443 for HTTP/HTTPS
+	fmt.Println("🔥 Configuring firewall for HTTP/HTTPS...")
+	webPorts := []int{80, 443}
+	for _, port := range webPorts {
+		portStr := fmt.Sprintf("%d", port)
+		// Add both IPv4 and IPv6 rules
+		runCommand("iptables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+		runCommand("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+	}
+	// Persist rules
+	runCommand("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true")
+	runCommand("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true")
+
 	// Update config with Apache installation details
 	if err := UpdateServerConfig("apache", true, port, mode); err != nil {
 		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
@@ -778,12 +817,25 @@ func InstallApacheVersion(version string) {
 	configureApache()
 	runCommand("systemctl", "enable", "apache2")
 	runCommand("systemctl", "start", "apache2")
-	
+
+	// Configure firewall - open ports 80 and 443 for HTTP/HTTPS
+	fmt.Println("🔥 Configuring firewall for HTTP/HTTPS...")
+	webPorts := []int{80, 443}
+	for _, port := range webPorts {
+		portStr := fmt.Sprintf("%d", port)
+		// Add both IPv4 and IPv6 rules
+		runCommand("iptables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+		runCommand("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+	}
+	// Persist rules
+	runCommand("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true")
+	runCommand("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true")
+
 	// Update config to mark Apache as installed and configured
 	if err := UpdateServerConfig("apache", true, 8080, "standalone"); err != nil {
 		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
-	
+
 	fmt.Printf("✅ Apache %s installed successfully\n", version)
 }
 
@@ -836,33 +888,33 @@ func InstallMySQL() {
 
 	// CLEAN SLATE APPROACH: Remove all MySQL/MariaDB packages and data
 	fmt.Println("🧹 Performing clean-slate removal of MySQL/MariaDB...")
-	
+
 	// AGGRESSIVE PRE-KILL: Force kill ALL processes before anything else
 	fmt.Println("🔪 Force-killing any running MySQL/MariaDB processes...")
 	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
 	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
 	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
 	time.Sleep(1 * time.Second)
-	
+
 	// Stop the service (may fail, that's ok)
 	runCommandQuiet("systemctl", "stop", "mysql")
 	runCommandQuiet("systemctl", "stop", "mariadb")
 	time.Sleep(1 * time.Second)
-	
+
 	// Purge ALL MySQL and MariaDB packages
 	fmt.Println("📦 Removing existing packages...")
 	purgeCmd := exec.Command("bash", "-c", "apt-get purge -y 'mysql*' 'mariadb*' 2>/dev/null; true")
 	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	_ = purgeCmd.Run()
-	
+
 	// Remove ALL data and config directories (fresh start) using glob patterns
 	cleanupMySQLMariaDBDirectories()
-	
+
 	// Clean apt cache to prevent conflicts
 	runCommandQuiet("apt", "clean")
 	runCommandQuiet("apt", "autoclean")
 	runCommandQuiet("apt", "autoremove", "-y")
-	
+
 	// Update package lists for fresh install
 	fmt.Println("🔄 Updating package lists...")
 	if err := runCommand("apt", "update"); err != nil {
@@ -876,13 +928,13 @@ func InstallMySQL() {
 	cmd := exec.Command("bash", "-c", "DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends mysql-server 2>&1 | head -200")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	// Run with timeout to prevent hanging
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Run()
 	}()
-	
+
 	// Wait up to 5 minutes for install to complete
 	select {
 	case err := <-done:
@@ -928,7 +980,6 @@ func InstallMySQL() {
 
 	fmt.Println("✅ MySQL installed successfully")
 }
-
 
 // InstallMariaDB installs MariaDB server
 func InstallMariaDB() {
@@ -979,33 +1030,33 @@ func InstallMariaDB() {
 
 	// CLEAN SLATE APPROACH: Remove all MySQL/MariaDB packages and data
 	fmt.Println("🧹 Performing clean-slate removal of MySQL/MariaDB...")
-	
+
 	// AGGRESSIVE PRE-KILL: Force kill ALL processes before anything else
 	fmt.Println("🔪 Force-killing any running MySQL/MariaDB processes...")
 	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
 	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
 	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
 	time.Sleep(1 * time.Second)
-	
+
 	// Stop the service (may fail, that's ok)
 	runCommandQuiet("systemctl", "stop", "mysql")
 	runCommandQuiet("systemctl", "stop", "mariadb")
 	time.Sleep(1 * time.Second)
-	
+
 	// Purge ALL MySQL and MariaDB packages
 	fmt.Println("📦 Removing existing packages...")
 	purgeCmd := exec.Command("bash", "-c", "apt-get purge -y 'mysql*' 'mariadb*' 2>/dev/null; true")
 	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	_ = purgeCmd.Run()
-	
+
 	// Remove ALL data and config directories (fresh start) using glob patterns
 	cleanupMySQLMariaDBDirectories()
-	
+
 	// Clean apt cache to prevent conflicts
 	runCommandQuiet("apt", "clean")
 	runCommandQuiet("apt", "autoclean")
 	runCommandQuiet("apt", "autoremove", "-y")
-	
+
 	// Update package lists for fresh install
 	fmt.Println("🔄 Updating package lists...")
 	if err := runCommand("apt", "update"); err != nil {
@@ -1019,13 +1070,13 @@ func InstallMariaDB() {
 	cmd := exec.Command("bash", "-c", "DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends mariadb-server 2>&1 | head -200")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	// Run with timeout to prevent hanging
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Run()
 	}()
-	
+
 	// Wait up to 5 minutes for install to complete
 	select {
 	case err := <-done:
@@ -1267,9 +1318,9 @@ func InstallMySQLVersion(version string) {
 		InstallMySQL()
 		return
 	}
-	
+
 	fmt.Printf("📦 Installing MySQL version %s...\n", version)
-	
+
 	// Check if MariaDB is already installed (conflict)
 	if isPackageInstalled("mariadb-server") {
 		fmt.Println("⚠️  MariaDB is already installed")
@@ -1284,7 +1335,7 @@ func InstallMySQLVersion(version string) {
 			return
 		}
 	}
-	
+
 	// Clean slate
 	fmt.Println("🧹 Performing clean-slate removal of MySQL/MariaDB...")
 	fmt.Println("🔪 Force-killing any running MySQL/MariaDB processes...")
@@ -1292,46 +1343,46 @@ func InstallMySQLVersion(version string) {
 	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
 	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
 	time.Sleep(1 * time.Second)
-	
+
 	runCommandQuiet("systemctl", "stop", "mysql")
 	runCommandQuiet("systemctl", "stop", "mariadb")
 	time.Sleep(1 * time.Second)
-	
+
 	fmt.Println("📦 Removing existing packages...")
 	purgeCmd := exec.Command("bash", "-c", "apt-get purge -y 'mysql*' 'mariadb*' 2>/dev/null; true")
 	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	_ = purgeCmd.Run()
-	
+
 	// Remove ALL data and config directories (fresh start) using glob patterns
 	cleanupMySQLMariaDBDirectories()
-	
+
 	runCommandQuiet("apt", "clean")
 	runCommandQuiet("apt", "autoclean")
 	runCommandQuiet("apt", "autoremove", "-y")
-	
+
 	fmt.Println("🔄 Updating package lists...")
 	if err := runCommand("apt", "update"); err != nil {
 		fmt.Printf("Error updating package list: %v\n", err)
 		return
 	}
-	
+
 	// Install specific MySQL version
 	fmt.Printf("📦 Installing MySQL version %s...\n", version)
-	
+
 	// Fix broken dependencies before install
 	fmt.Println("🔧 Fixing broken dependencies (before install)...")
 	runCommandQuiet("apt", "--fix-broken", "install", "-y")
-	
+
 	packageSpec := fmt.Sprintf("mysql-server=%s*", version)
 	cmd := exec.Command("bash", "-c", fmt.Sprintf("DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends '%s' 2>&1 | head -200", packageSpec))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Run()
 	}()
-	
+
 	select {
 	case err := <-done:
 		if err != nil {
@@ -1341,36 +1392,36 @@ func InstallMySQLVersion(version string) {
 		fmt.Println("⚠️  Installation timed out after 5 minutes")
 		fmt.Println("   Continuing anyway...")
 	}
-	
+
 	// Fix broken dependencies after install
 	fmt.Println("🔧 Fixing broken dependencies (after install)...")
 	runCommandQuiet("apt", "--fix-broken", "install", "-y")
-	
+
 	time.Sleep(2 * time.Second)
-	
+
 	fmt.Println("🔍 Verifying MySQL service...")
 	if err := runCommand("systemctl", "restart", "mysql"); err != nil {
 		fmt.Printf("⚠️  MySQL service may not be fully installed: %v\n", err)
 		fmt.Println("   Continuing with configuration anyway...")
 	}
-	
+
 	configureMySQL()
-	
+
 	if isServiceActive("mysql") {
 		secureRootUser("mysql")
 	} else {
 		fmt.Println("⚠️  MySQL service is not running. Skipping password setup.")
 	}
-	
+
 	if err := runCommand("systemctl", "enable", "mysql"); err != nil {
 		fmt.Printf("Error enabling MySQL: %v\n", err)
 	}
-	
+
 	// Update config to mark MySQL as installed and configured
 	if err := UpdateServerConfig("mysql", true, 3306, "backend"); err != nil {
 		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
-	
+
 	fmt.Printf("✅ MySQL %s installed successfully\n", version)
 }
 
@@ -1380,9 +1431,9 @@ func InstallMariaDBVersion(version string) {
 		InstallMariaDB()
 		return
 	}
-	
+
 	fmt.Printf("📦 Installing MariaDB version %s...\n", version)
-	
+
 	// Check if MySQL is already installed (conflict)
 	if isPackageInstalled("mysql-server") {
 		fmt.Println("⚠️  MySQL is already installed")
@@ -1397,7 +1448,7 @@ func InstallMariaDBVersion(version string) {
 			return
 		}
 	}
-	
+
 	// Clean slate
 	fmt.Println("🧹 Performing clean-slate removal of MySQL/MariaDB...")
 	fmt.Println("🔪 Force-killing any running MySQL/MariaDB processes...")
@@ -1405,46 +1456,46 @@ func InstallMariaDBVersion(version string) {
 	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
 	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
 	time.Sleep(1 * time.Second)
-	
+
 	runCommandQuiet("systemctl", "stop", "mysql")
 	runCommandQuiet("systemctl", "stop", "mariadb")
 	time.Sleep(1 * time.Second)
-	
+
 	fmt.Println("📦 Removing existing packages...")
 	purgeCmd := exec.Command("bash", "-c", "apt-get purge -y 'mysql*' 'mariadb*' 2>/dev/null; true")
 	purgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	_ = purgeCmd.Run()
-	
+
 	// Remove ALL data and config directories (fresh start) using glob patterns
 	cleanupMySQLMariaDBDirectories()
-	
+
 	runCommandQuiet("apt", "clean")
 	runCommandQuiet("apt", "autoclean")
 	runCommandQuiet("apt", "autoremove", "-y")
-	
+
 	fmt.Println("🔄 Updating package lists...")
 	if err := runCommand("apt", "update"); err != nil {
 		fmt.Printf("Error updating package list: %v\n", err)
 		return
 	}
-	
+
 	// Install specific MariaDB version
 	fmt.Printf("📦 Installing MariaDB version %s...\n", version)
-	
+
 	// Fix broken dependencies before install
 	fmt.Println("🔧 Fixing broken dependencies (before install)...")
 	runCommandQuiet("apt", "--fix-broken", "install", "-y")
-	
+
 	packageSpec := fmt.Sprintf("mariadb-server=%s*", version)
 	cmd := exec.Command("bash", "-c", fmt.Sprintf("DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y --no-install-recommends '%s' 2>&1 | head -200", packageSpec))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Run()
 	}()
-	
+
 	select {
 	case err := <-done:
 		if err != nil {
@@ -1454,36 +1505,36 @@ func InstallMariaDBVersion(version string) {
 		fmt.Println("⚠️  Installation timed out after 5 minutes")
 		fmt.Println("   Continuing anyway...")
 	}
-	
+
 	// Fix broken dependencies after install
 	fmt.Println("🔧 Fixing broken dependencies (after install)...")
 	runCommandQuiet("apt", "--fix-broken", "install", "-y")
-	
+
 	time.Sleep(2 * time.Second)
-	
+
 	fmt.Println("🔍 Verifying MariaDB service...")
 	if err := runCommand("systemctl", "restart", "mariadb"); err != nil {
 		fmt.Printf("⚠️  MariaDB service may not be fully installed: %v\n", err)
 		fmt.Println("   Continuing with configuration anyway...")
 	}
-	
+
 	configureMariaDB()
-	
+
 	if isServiceActive("mariadb") {
 		secureRootUser("mariadb")
 	} else {
 		fmt.Println("⚠️  MariaDB service is not running. Skipping password setup.")
 	}
-	
+
 	if err := runCommand("systemctl", "enable", "mariadb"); err != nil {
 		fmt.Printf("Error enabling MariaDB: %v\n", err)
 	}
-	
+
 	// Update config to mark MariaDB as installed and configured
 	if err := UpdateServerConfig("mariadb", true, 3306, "backend"); err != nil {
 		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
-	
+
 	fmt.Printf("✅ MariaDB %s installed successfully\n", version)
 }
 
@@ -1495,7 +1546,7 @@ func UninstallAll() {
 	fmt.Println("==============================")
 	fmt.Println("⚠️  This will remove ALL components (Nginx, Apache, databases, PHP versions)")
 	fmt.Println("⚠️  Your domain data and SSL certificates will be preserved")
-	
+
 	if !improvedAskYesNo("Are you sure you want to uninstall everything?") {
 		fmt.Println("Uninstall cancelled.")
 		return
@@ -1560,12 +1611,25 @@ func UninstallNginx() {
 	// Clean up nginx includes directory used for modules like phpmyadmin, pgadmin, etc.
 	os.RemoveAll("/etc/nginx/includes")
 
+	// Remove firewall rules
+	fmt.Println("🔒 Removing firewall rules...")
+	webPorts := []int{80, 443}
+	for _, port := range webPorts {
+		portStr := fmt.Sprintf("%d", port)
+		// Remove both IPv4 and IPv6 rules
+		runCommand("iptables", "-D", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+		runCommand("ip6tables", "-D", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+	}
+	// Persist rules
+	runCommand("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true")
+	runCommand("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true")
+
 	// Update config
 	if err := UpdateServerConfig("nginx", false, 0, ""); err != nil {
 		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
 
-	fmt.Println("✅ Nginx uninstalled successfully")
+	fmt.Println("✅ Nginx uninstalled successfully (firewall ports 80/443 closed)")
 }
 
 // UninstallApache removes Apache
@@ -1591,12 +1655,25 @@ func UninstallApache() {
 	// Clean up apache includes directory used for modules like phpmyadmin, pgadmin, etc.
 	os.RemoveAll("/etc/apache2/includes")
 
+	// Remove firewall rules
+	fmt.Println("🔒 Removing firewall rules...")
+	webPorts := []int{80, 443}
+	for _, port := range webPorts {
+		portStr := fmt.Sprintf("%d", port)
+		// Remove both IPv4 and IPv6 rules
+		runCommand("iptables", "-D", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+		runCommand("ip6tables", "-D", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT")
+	}
+	// Persist rules
+	runCommand("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true")
+	runCommand("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true")
+
 	// Update config
 	if err := UpdateServerConfig("apache", false, 0, ""); err != nil {
 		fmt.Printf("⚠️  Warning: Could not update config: %v\n", err)
 	}
 
-	fmt.Println("✅ Apache uninstalled successfully")
+	fmt.Println("✅ Apache uninstalled successfully (firewall ports 80/443 closed)")
 }
 
 // UninstallMySQL removes MySQL
@@ -1691,21 +1768,20 @@ func UninstallPHP(version string) {
 	fmt.Printf("✅ PHP %s uninstalled successfully\n", version)
 }
 
-
 // cleanupMySQLMariaDBDirectories removes all MySQL/MariaDB related directories using glob patterns
 func cleanupMySQLMariaDBDirectories() {
 	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
-	
+
 	// Use bash glob patterns to catch all variants (* wildcards)
 	// This ensures we remove /var/lib/mysql, /var/lib/mysql-8.0, /var/lib/mysql-files, etc.
 	cleanupPatterns := []string{
-		"/var/lib/mysql*",      // Catches mysql, mysql-8.0, mysql-files, etc.
-		"/var/log/mysql*",      // Catches mysql, mysql-files logs, etc.
-		"/etc/mysql*",          // Catches mysql, mysqlrouter configs, etc.
-		"/run/mysqld*",         // Catches mysqld, mysqld_safe, etc.
-		"/run/mariadb*",        // Catches mariadb, mariadb-init, etc.
+		"/var/lib/mysql*", // Catches mysql, mysql-8.0, mysql-files, etc.
+		"/var/log/mysql*", // Catches mysql, mysql-files logs, etc.
+		"/etc/mysql*",     // Catches mysql, mysqlrouter configs, etc.
+		"/run/mysqld*",    // Catches mysqld, mysqld_safe, etc.
+		"/run/mariadb*",   // Catches mariadb, mariadb-init, etc.
 	}
-	
+
 	for _, pattern := range cleanupPatterns {
 		// Use bash glob expansion to handle wildcards properly
 		runCommandQuiet("bash", "-c", fmt.Sprintf("rm -rf %s 2>/dev/null || true", pattern))
@@ -1787,23 +1863,23 @@ func configureNginx() {
 
 	// Generate unified DH parameters for SSL/TLS (used by both Nginx and Dovecot)
 	dhparamPath := "/etc/ssl/dhparam.pem"
-	
+
 	// Check if openssl is available
 	if err := exec.Command("which", "openssl").Run(); err != nil {
 		fmt.Println("⚠️  Warning: OpenSSL not found, skipping DH parameter generation")
 		fmt.Println("   Install it later with: sudo apt install -y openssl")
 	} else if _, err := os.Stat(dhparamPath); os.IsNotExist(err) {
 		fmt.Println("🔐 Generating SSL DH parameters (this may take a minute)...")
-		
+
 		// Generate DH params with retry logic (up to 3 attempts)
 		maxRetries := 3
 		success := false
-		
+
 		for attempt := 1; attempt <= maxRetries; attempt++ {
 			if attempt > 1 {
 				fmt.Printf("   Retry attempt %d/%d...\n", attempt, maxRetries)
 			}
-			
+
 			cmd := exec.Command("openssl", "dhparam", "-out", dhparamPath, "2048")
 			if err := cmd.Run(); err != nil {
 				fmt.Printf("   ⚠️  Generation attempt %d failed: %v\n", attempt, err)
@@ -1821,7 +1897,7 @@ func configureNginx() {
 				break
 			}
 		}
-		
+
 		// If generation succeeded, set proper permissions
 		if success {
 			exec.Command("chmod", "644", dhparamPath).Run()
@@ -1922,7 +1998,7 @@ Listen %d
 			tmpl.Execute(&buf, map[string]interface{}{
 				"ApachePort": apachePort,
 			})
-			
+
 			if err := os.MkdirAll("/etc/apache2/sites-available", 0755); err == nil {
 				if err := ioutil.WriteFile("/etc/apache2/sites-available/000-default.conf", []byte(buf.String()), 0644); err == nil {
 					// Enable the default site
@@ -2040,13 +2116,13 @@ func configureMariaDB() bool {
 
 func configurePostgreSQL() {
 	fmt.Println("⚙️  Configuring PostgreSQL...")
-	
+
 	fmt.Println("🔐 Securing database postgres user...")
 
 	// Ask user if they want to set a password or auto-generate one
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter password for postgres user (press Enter for auto-generated password): ")
-	
+
 	userInput, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Printf("Error reading input: %v\n", err)
@@ -2111,7 +2187,6 @@ Security Notes:
 	}
 }
 
-
 func configurePHP(version string) {
 	// TODO: Apply PHP-FPM configuration from templates
 	fmt.Printf("⚙️  Configuring PHP %s...\n", version)
@@ -2145,7 +2220,6 @@ func detectPhpFpmSocket() string {
 	return ""
 }
 
-
 // generateRandomPassword generates a random password of specified length
 func generateRandomPassword(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -2157,19 +2231,18 @@ func generateRandomPassword(length int) string {
 	return string(password)
 }
 
-
 // executeSQL executes SQL commands against MySQL/MariaDB
 func executeSQL(sqlCommands string) error {
 	// Try with mysql command line client as root user (no password, socket auth)
 	cmd := exec.Command("mysql", "-u", "root", "-e", sqlCommands)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Log the output for debugging
 		fmt.Printf("Debug: MySQL execution output: %s\n", string(output))
 		return fmt.Errorf("failed to execute SQL: %v", err)
 	}
-	
+
 	return nil
 }
 
@@ -2179,13 +2252,13 @@ func executeSQLAsRoot(sqlCommands string) error {
 	// We pipe the SQL to stdin to avoid shell escaping issues with passwords
 	cmd := exec.Command("mysql", "-u", "root")
 	cmd.Stdin = strings.NewReader(sqlCommands)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("Debug: MySQL execution output: %s\n", string(output))
 		return fmt.Errorf("failed to execute SQL: %v", err)
 	}
-	
+
 	return nil
 }
 
@@ -2196,7 +2269,7 @@ func secureRootUser(dbType string) {
 	// Ask user if they want to set a password or auto-generate one
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter password for root user (press Enter for auto-generated password): ")
-	
+
 	userInput, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Printf("Error reading input: %v\n", err)
@@ -2383,26 +2456,25 @@ func GetComponentsStatus() map[string]ComponentStatusSummary {
 // GetPHPVersionsStatus returns status for all PHP versions
 func GetPHPVersionsStatus() map[string]ComponentStatusSummary {
 	results := make(map[string]ComponentStatusSummary)
-	
+
 	// Common PHP versions
 	phpVersions := []string{"5.6", "7.0", "7.1", "7.2", "7.3", "7.4", "8.0", "8.1", "8.2", "8.3", "8.4"}
-	
+
 	for _, version := range phpVersions {
 		packageName := fmt.Sprintf("php%s-fpm", version)
 		installed := isPackageInstalled(packageName)
-		
+
 		serviceName := fmt.Sprintf("php%s-fpm", version)
 		running := false
 		if installed {
 			running = isServiceActive(serviceName)
 		}
-		
+
 		results[fmt.Sprintf("php%s", version)] = ComponentStatusSummary{
 			DpkgInstalled:  installed,
 			ServiceRunning: running,
 		}
 	}
-	
+
 	return results
 }
-

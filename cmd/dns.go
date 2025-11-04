@@ -232,7 +232,7 @@ var dnsDNSSECCmd = &cobra.Command{
 		}
 		enable, _ := cmd.Flags().GetBool("enable")
 		disable, _ := cmd.Flags().GetBool("disable")
-		
+
 		if enable {
 			manageDNSSEC(true)
 		} else if disable {
@@ -265,7 +265,7 @@ var dnsQuerylogCmd = &cobra.Command{
 		}
 		enable, _ := cmd.Flags().GetBool("enable")
 		disable, _ := cmd.Flags().GetBool("disable")
-		
+
 		if enable {
 			manageQueryLog(true)
 		} else if disable {
@@ -292,10 +292,10 @@ func init() {
 	dnsConfigCmd.Flags().StringP("type", "t", "", "Zone type: master or slave")
 
 	dnsLogsCmd.Flags().IntP("lines", "n", 50, "Number of log lines to display")
-	
+
 	dnsDNSSECCmd.Flags().BoolP("enable", "e", false, "Enable DNSSEC validation")
 	dnsDNSSECCmd.Flags().BoolP("disable", "d", false, "Disable DNSSEC validation")
-	
+
 	dnsQuerylogCmd.Flags().BoolP("enable", "e", false, "Enable query logging")
 	dnsQuerylogCmd.Flags().BoolP("disable", "d", false, "Disable query logging")
 
@@ -321,6 +321,9 @@ func init() {
 
 func installDNS(mode, masterIP, serverIP, clusterName string) {
 	fmt.Println("🚀 Installing Bind9 DNS Server...")
+
+	// Setup core security infrastructure FIRST (before DNS-specific packages)
+	setupCoreSecurity()
 
 	// Default to master if not specified
 	if mode == "" {
@@ -367,7 +370,7 @@ func installDNS(mode, masterIP, serverIP, clusterName string) {
 	exec.Command("chown", "-R", "bind:bind", "/var/cache/bind").Run()
 	exec.Command("chown", "-R", "bind:bind", "/var/log/named").Run()
 	exec.Command("chown", "-R", "bind:bind", "/var/lib/bind").Run()
-	
+
 	// Create log file with proper permissions
 	logFile := "/var/log/named/default.log"
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
@@ -404,9 +407,22 @@ func installDNS(mode, masterIP, serverIP, clusterName string) {
 
 	// Step 6: Configure firewall
 	fmt.Println("🔥 Configuring firewall...")
-	exec.Command("ufw", "allow", "53/tcp").Run()
-	exec.Command("ufw", "allow", "53/udp").Run()
-	fmt.Println("✓ Firewall configured")
+	dnsPorts := []int{53} // DNS uses both TCP and UDP on port 53
+
+	for _, port := range dnsPorts {
+		portStr := fmt.Sprintf("%d", port)
+		// Add both TCP and UDP rules for IPv4
+		exec.Command("iptables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT").Run()
+		exec.Command("iptables", "-A", "INPUT", "-p", "udp", "--dport", portStr, "-j", "ACCEPT").Run()
+		// Add both TCP and UDP rules for IPv6
+		exec.Command("ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "ACCEPT").Run()
+		exec.Command("ip6tables", "-A", "INPUT", "-p", "udp", "--dport", portStr, "-j", "ACCEPT").Run()
+	}
+
+	// Persist rules across reboots
+	exec.Command("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true").Run()
+	exec.Command("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true").Run()
+	fmt.Println("✓ Firewall configured (DNS port 53 TCP/UDP opened)")
 
 	// Success message
 	fmt.Println("\n" + strings.Repeat("═", 70))
@@ -444,10 +460,19 @@ func uninstallDNS() {
 	exec.Command("bash", "-c", "rm -rf /etc/bind* /var/cache/bind* /var/log/named/default.log* /var/lib/bind*").Run()
 
 	// Remove firewall rules
-	exec.Command("ufw", "delete", "allow", "53/tcp").Run()
-	exec.Command("ufw", "delete", "allow", "53/udp").Run()
+	fmt.Println("🔒 Removing firewall rules...")
+	// Remove both TCP and UDP rules for DNS port 53
+	exec.Command("iptables", "-D", "INPUT", "-p", "tcp", "--dport", "53", "-j", "ACCEPT").Run()
+	exec.Command("iptables", "-D", "INPUT", "-p", "udp", "--dport", "53", "-j", "ACCEPT").Run()
+	// Remove IPv6 rules
+	exec.Command("ip6tables", "-D", "INPUT", "-p", "tcp", "--dport", "53", "-j", "ACCEPT").Run()
+	exec.Command("ip6tables", "-D", "INPUT", "-p", "udp", "--dport", "53", "-j", "ACCEPT").Run()
 
-	fmt.Println("✅ Bind9 DNS Server uninstalled successfully")
+	// Save updated rules
+	exec.Command("bash", "-c", "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true").Run()
+	exec.Command("bash", "-c", "ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true").Run()
+
+	fmt.Println("✅ Bind9 DNS Server uninstalled successfully (firewall port 53 closed)")
 }
 
 func showDNSStatus() {
@@ -632,7 +657,7 @@ func configureZone(zoneName, zoneType string) {
 	// Reload Bind9
 	exec.Command("systemctl", "reload", "bind9").Run()
 	fmt.Printf("✅ Zone %s configured successfully\n", zoneName)
-	
+
 	if zoneType == "slave" {
 		fmt.Printf("   Remember to set master IP in: /etc/bind/named.conf.local\n")
 	} else {
@@ -670,7 +695,7 @@ func listDNSZones() {
 
 	content := string(data)
 	lines := strings.Split(content, "\n")
-	
+
 	zoneCount := 0
 	for _, line := range lines {
 		if strings.Contains(line, `zone "`) {
@@ -681,7 +706,7 @@ func listDNSZones() {
 			}
 		}
 	}
-	
+
 	if zoneCount == 0 {
 		fmt.Println("   No zones configured")
 	}
@@ -700,7 +725,7 @@ func testDNSQuery(domain string) {
 		fmt.Printf("❌ Query failed: %v\n", err)
 		return
 	}
-	
+
 	result := strings.TrimSpace(string(output))
 	if result == "" {
 		fmt.Println("⚠️  No results returned")
@@ -713,27 +738,27 @@ func backupDNS() {
 	fmt.Println("💾 Backing up DNS configuration...")
 	timestampOutput, _ := exec.Command("date", "+%Y%m%d_%H%M%S").Output()
 	backupName := fmt.Sprintf("/tmp/dns-backup-%s.tar.gz", strings.TrimSpace(string(timestampOutput)))
-	
+
 	cmd := fmt.Sprintf("tar -czf %s /etc/bind /var/lib/bind 2>/dev/null", backupName)
 	if err := exec.Command("bash", "-c", cmd).Run(); err != nil {
 		fmt.Printf("❌ Backup failed: %v\n", err)
 		return
 	}
-	
+
 	fmt.Printf("✅ Backup created: %s\n", backupName)
 }
 
 func restoreDNS(backupPath string) {
 	fmt.Printf("📥 Restoring DNS from: %s\n", backupPath)
-	
+
 	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
 		fmt.Println("❌ Backup file not found")
 		return
 	}
-	
+
 	fmt.Println("🛑 Stopping Bind9 for restore...")
 	exec.Command("systemctl", "stop", "bind9").Run()
-	
+
 	cmd := fmt.Sprintf("tar -xzf %s -C / 2>/dev/null", backupPath)
 	if err := exec.Command("bash", "-c", cmd).Run(); err != nil {
 		fmt.Printf("❌ Restore failed: %v\n", err)
@@ -741,31 +766,31 @@ func restoreDNS(backupPath string) {
 		exec.Command("systemctl", "start", "bind9").Run()
 		return
 	}
-	
+
 	// Fix permissions
 	exec.Command("chown", "-R", "bind:bind", "/etc/bind").Run()
 	exec.Command("chown", "-R", "bind:bind", "/var/lib/bind").Run()
-	
+
 	fmt.Println("🔄 Starting Bind9...")
 	if err := exec.Command("systemctl", "start", "bind9").Run(); err != nil {
 		fmt.Printf("❌ Failed to start Bind9: %v\n", err)
 		return
 	}
-	
+
 	fmt.Println("✅ DNS restored successfully")
 }
 
 func manageDNSSEC(enable bool) {
 	fmt.Printf("🔒 %s DNSSEC validation...\n", map[bool]string{true: "Enabling", false: "Disabling"}[enable])
-	
+
 	data, err := os.ReadFile("/etc/bind/named.conf")
 	if err != nil {
 		fmt.Println("❌ Could not read named.conf")
 		return
 	}
-	
+
 	content := string(data)
-	
+
 	if enable {
 		if !strings.Contains(content, "dnssec-validation auto;") {
 			content = strings.Replace(content, "dnssec-validation auto;", "dnssec-validation auto;", 1)
@@ -777,12 +802,12 @@ func manageDNSSEC(enable bool) {
 	} else {
 		content = strings.Replace(content, "dnssec-validation auto;", "dnssec-validation no;", -1)
 	}
-	
+
 	if err := os.WriteFile("/etc/bind/named.conf", []byte(content), 0644); err != nil {
 		fmt.Println("❌ Failed to update configuration")
 		return
 	}
-	
+
 	exec.Command("systemctl", "reload", "bind9").Run()
 	fmt.Printf("✅ DNSSEC %s\n", map[bool]string{true: "enabled", false: "disabled"}[enable])
 }
@@ -790,22 +815,22 @@ func manageDNSSEC(enable bool) {
 func showDNSStats() {
 	fmt.Println("📊 DNS Query Statistics")
 	fmt.Println("─────────────────────────────────────────")
-	
+
 	// Try to get stats from rndc
 	output, err := exec.Command("rndc", "stats").Output()
 	if err == nil {
 		fmt.Printf("Stats command: %s\n", strings.TrimSpace(string(output)))
 	}
-	
+
 	// Show log summary
 	cmd := "tail -1000 /var/log/named/default.log 2>/dev/null | grep -c 'query' || echo '0'"
 	output, _ = exec.Command("bash", "-c", cmd).Output()
 	fmt.Printf("Queries in last 1000 log entries: %s", string(output))
-	
+
 	cmd = "tail -1000 /var/log/named/default.log 2>/dev/null | grep -c 'NXDOMAIN' || echo '0'"
 	output, _ = exec.Command("bash", "-c", cmd).Output()
 	fmt.Printf("NXDOMAIN responses: %s", string(output))
-	
+
 	cmd = "tail -1000 /var/log/named/default.log 2>/dev/null | grep -c 'SERVFAIL' || echo '0'"
 	output, _ = exec.Command("bash", "-c", cmd).Output()
 	fmt.Printf("SERVFAIL responses: %s", string(output))
@@ -813,15 +838,15 @@ func showDNSStats() {
 
 func manageQueryLog(enable bool) {
 	fmt.Printf("📝 %s query logging...\n", map[bool]string{true: "Enabling", false: "Disabling"}[enable])
-	
+
 	data, err := os.ReadFile("/etc/bind/named.conf")
 	if err != nil {
 		fmt.Println("❌ Could not read named.conf")
 		return
 	}
-	
+
 	content := string(data)
-	
+
 	if enable {
 		// Add query logging config if not present
 		if !strings.Contains(content, "querylog yes;") {
@@ -833,12 +858,12 @@ func manageQueryLog(enable bool) {
 	} else {
 		content = strings.Replace(content, "querylog yes;", "querylog no;", -1)
 	}
-	
+
 	if err := os.WriteFile("/etc/bind/named.conf", []byte(content), 0644); err != nil {
 		fmt.Println("❌ Failed to update configuration")
 		return
 	}
-	
+
 	exec.Command("systemctl", "reload", "bind9").Run()
 	fmt.Printf("✅ Query logging %s\n", map[bool]string{true: "enabled", false: "disabled"}[enable])
 }
