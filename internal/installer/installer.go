@@ -187,154 +187,6 @@ func improvedAskYesNo(question string) bool {
 	}
 }
 
-// cleanupMySQLMariaDB performs a nuclear cleanup of MySQL/MariaDB when uninstall is needed
-// This function handles orphaned processes that can't be killed normally
-func cleanupMySQLMariaDB() {
-	fmt.Println("\n🚀 NUCLEAR CLEANUP - REMOVING ALL MYSQL/MARIADB")
-	fmt.Println("================================================== ")
-
-	// Kill everything
-	fmt.Println("🔪 Killing all processes...")
-	runCommandQuiet("bash", "-c", "pkill -9 mysqld 2>/dev/null; true")
-	runCommandQuiet("bash", "-c", "pkill -9 mariadbd 2>/dev/null; true")
-	runCommandQuiet("bash", "-c", "pkill -9 mysql 2>/dev/null; true")
-	runCommandQuiet("bash", "-c", "pkill -9 apt 2>/dev/null; true")
-	runCommandQuiet("bash", "-c", "pkill -9 dpkg 2>/dev/null; true")
-	time.Sleep(1 * time.Second)
-
-	// Remove policy-rc.d block
-	fmt.Println("🗑️  Removing policy blocks...")
-	os.Remove("/usr/sbin/policy-rc.d")
-
-	// Remove ALL lock files
-	fmt.Println("🔓 Removing lock files...")
-	os.Remove("/var/lib/dpkg/lock-frontend")
-	os.Remove("/var/lib/dpkg/lock")
-	os.Remove("/var/cache/apt/archives/lock")
-
-	// Use bash to clean debconf locks with glob pattern
-	runCommandQuiet("bash", "-c", "rm -f /var/cache/debconf/*.dat /var/cache/debconf/*.old")
-
-	// Remove ALL MySQL/MariaDB directories
-	fmt.Println("🗑️  Removing all MySQL/MariaDB directories...")
-	runCommandQuiet("bash", "-c", "rm -rf /var/lib/mysql*")
-	runCommandQuiet("bash", "-c", "rm -rf /var/log/mysql*")
-	runCommandQuiet("bash", "-c", "rm -rf /etc/mysql*")
-	runCommandQuiet("bash", "-c", "rm -rf /run/mysqld*")
-	runCommandQuiet("bash", "-c", "rm -rf /run/mariadb*")
-
-	// Reset dpkg state
-	fmt.Println("🔧 Resetting dpkg...")
-	runCommandQuiet("dpkg", "--configure", "-a")
-
-	// Force remove any broken packages
-	fmt.Println("📦 Force removing packages...")
-	runCommandQuiet("bash", "-c", "dpkg -l | grep -i mysql | awk '{print $2}' | xargs -r dpkg --purge --force-all 2>/dev/null || true")
-	runCommandQuiet("bash", "-c", "dpkg -l | grep -i mariadb | awk '{print $2}' | xargs -r dpkg --purge --force-all 2>/dev/null || true")
-
-	// Clean apt
-	fmt.Println("🧹 Cleaning apt...")
-	runCommandQuiet("apt", "clean")
-	runCommandQuiet("apt", "autoclean", "-y")
-	runCommandQuiet("apt", "autoremove", "-y")
-
-	// Final verification
-	fmt.Println("")
-	fmt.Println("✅ CLEANUP COMPLETE - Verification:")
-	fmt.Println("  Remaining MySQL packages:")
-	cmd := exec.Command("bash", "-c", "dpkg -l | grep -iE 'mysql|mariadb' | wc -l")
-	output, _ := cmd.Output()
-	if strings.TrimSpace(string(output)) == "0" {
-		fmt.Println("    ✅ None")
-	} else {
-		fmt.Printf("    ⚠️  %s packages still present\n", strings.TrimSpace(string(output)))
-	}
-
-	fmt.Println("  Running processes:")
-	cmd = exec.Command("bash", "-c", "ps aux | grep -iE 'mysqld|mariadbd|mysql|mariadb' | grep -v grep | wc -l")
-	output, _ = cmd.Output()
-	if strings.TrimSpace(string(output)) == "0" {
-		fmt.Println("    ✅ None")
-	} else {
-		fmt.Printf("    ⚠️  %s processes still running\n", strings.TrimSpace(string(output)))
-	}
-
-	// Ask for reboot
-	fmt.Println("")
-	if improvedAskYesNo("⚠️  A system reboot is recommended to ensure all MySQL/MariaDB processes are terminated. Reboot now?") {
-		fmt.Println("🔄 Rebooting system...")
-		runCommand("systemctl", "reboot")
-	} else {
-		fmt.Println("⚠️  Please manually reboot the system before reinstalling MySQL/MariaDB")
-	}
-}
-
-// cleanupPostgreSQL performs nuclear cleanup for stuck/orphaned PostgreSQL processes
-func cleanupPostgreSQL() {
-	fmt.Println("\n🧨 NUCLEAR CLEANUP MODE - PostgreSQL")
-	fmt.Println("This will aggressively remove all PostgreSQL traces...")
-
-	// Kill everything
-	fmt.Println("🔪 Killing all PostgreSQL processes...")
-	runCommandQuiet("bash", "-c", "pkill -9 postgres 2>/dev/null; true")
-	runCommandQuiet("bash", "-c", "pkill -9 postgresql 2>/dev/null; true")
-	runCommandQuiet("bash", "-c", "pkill -9 apt 2>/dev/null; true")
-	runCommandQuiet("bash", "-c", "pkill -9 dpkg 2>/dev/null; true")
-	time.Sleep(1 * time.Second)
-
-	// Remove ALL PostgreSQL directories
-	fmt.Println("🗑️  Removing all PostgreSQL directories...")
-	runCommandQuiet("bash", "-c", "rm -rf /var/lib/postgresql*")
-	runCommandQuiet("bash", "-c", "rm -rf /var/log/postgresql*")
-	runCommandQuiet("bash", "-c", "rm -rf /etc/postgresql*")
-	runCommandQuiet("bash", "-c", "rm -rf /run/postgresql*")
-	runCommandQuiet("bash", "-c", "rm -rf /home/postgres")
-
-	// Reset dpkg state
-	fmt.Println("🔧 Repairing dpkg state...")
-	runCommandQuiet("dpkg", "--configure", "-a")
-
-	// Force remove all PostgreSQL packages
-	fmt.Println("💣 Force removing PostgreSQL packages...")
-	runCommandQuiet("dpkg", "--purge", "--force-all", "postgresql", "postgresql-contrib", "postgresql-client", "postgresql-common")
-	runCommandQuiet("apt", "autoremove", "-y")
-
-	// Clean apt cache
-	fmt.Println("🧹 Cleaning APT cache...")
-	runCommandQuiet("apt", "clean")
-	runCommandQuiet("apt", "autoclean")
-
-	// Final verification
-	fmt.Println("")
-	fmt.Println("✅ CLEANUP COMPLETE - Verification:")
-	fmt.Println("  Remaining PostgreSQL packages:")
-	cmd := exec.Command("bash", "-c", "dpkg -l | grep -iE 'postgresql' | wc -l")
-	output, _ := cmd.Output()
-	if strings.TrimSpace(string(output)) == "0" {
-		fmt.Println("    ✅ None")
-	} else {
-		fmt.Printf("    ⚠️  %s packages still present\n", strings.TrimSpace(string(output)))
-	}
-
-	fmt.Println("  Running processes:")
-	cmd = exec.Command("bash", "-c", "ps aux | grep -iE 'postgres' | grep -v grep | wc -l")
-	output, _ = cmd.Output()
-	if strings.TrimSpace(string(output)) == "0" {
-		fmt.Println("    ✅ None")
-	} else {
-		fmt.Printf("    ⚠️  %s processes still running\n", strings.TrimSpace(string(output)))
-	}
-
-	// Ask for reboot
-	fmt.Println("")
-	if improvedAskYesNo("⚠️  A system reboot is recommended to ensure all PostgreSQL processes are terminated. Reboot now?") {
-		fmt.Println("🔄 Rebooting system...")
-		runCommand("systemctl", "reboot")
-	} else {
-		fmt.Println("⚠️  Please manually reboot the system before reinstalling PostgreSQL")
-	}
-}
-
 // uninstallComponent removes a component
 func uninstallComponent(component Component) error {
 	fmt.Printf("🗑️  Removing %s...\n", component.Name)
@@ -2199,27 +2051,6 @@ func isServiceActive(serviceName string) bool {
 	return err == nil
 }
 
-// detectPhpFpmSocket detects the PHP-FPM socket path
-func detectPhpFpmSocket() string {
-	// Try common socket paths
-	sockets := []string{
-		"/run/php/php8.3-fpm.sock",
-		"/run/php/php8.2-fpm.sock",
-		"/run/php/php8.1-fpm.sock",
-		"/run/php/php8.0-fpm.sock",
-		"/run/php/php7.4-fpm.sock",
-		"/run/php/www.sock",
-	}
-
-	for _, socket := range sockets {
-		if _, err := os.Stat(socket); err == nil {
-			return socket
-		}
-	}
-
-	return ""
-}
-
 // generateRandomPassword generates a random password of specified length
 func generateRandomPassword(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -2229,21 +2060,6 @@ func generateRandomPassword(length int) string {
 		password[i] = charset[rand.Intn(len(charset))]
 	}
 	return string(password)
-}
-
-// executeSQL executes SQL commands against MySQL/MariaDB
-func executeSQL(sqlCommands string) error {
-	// Try with mysql command line client as root user (no password, socket auth)
-	cmd := exec.Command("mysql", "-u", "root", "-e", sqlCommands)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Log the output for debugging
-		fmt.Printf("Debug: MySQL execution output: %s\n", string(output))
-		return fmt.Errorf("failed to execute SQL: %v", err)
-	}
-
-	return nil
 }
 
 // executeSQLAsRoot executes SQL commands as the mysql system user (for initial setup without password)
