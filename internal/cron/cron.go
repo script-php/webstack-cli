@@ -90,6 +90,9 @@ func ListJobs(webstackOnly bool) ([]Job, error) {
 	// First, sync any crons that exist in crontab but not in metadata
 	syncCrontabToDB()
 
+	// Also sync systemd timers to metadata
+	syncSystemdTimersToDB()
+
 	// Now read from metadata
 	files, err := ioutil.ReadDir(cronMetadataDir)
 	if err != nil {
@@ -619,6 +622,179 @@ func syncCrontabToDB() {
 			saveJobMetadata(job)
 		}
 	}
+}
+
+// syncSystemdTimersToDB discovers systemd timers and syncs them to metadata
+func syncSystemdTimersToDB() {
+	// List all systemd timers with webstack prefix
+	cmd := exec.Command("systemctl", "list-timers", "webstack*", "--all", "--output=json")
+	output, err := cmd.Output()
+	if err != nil {
+		// systemd timers not available or no timers found
+		return
+	}
+
+	// Parse JSON output (simplified - just look for timer names)
+	// systemctl list-timers --output=json returns structured data
+	var timers []map[string]interface{}
+	if err := json.Unmarshal(output, &timers); err != nil {
+		// Try parsing simple output format
+		return
+	}
+
+	// Process each timer
+	for _, timer := range timers {
+		if unitStr, ok := timer["unit"].(string); ok {
+			if !strings.HasPrefix(unitStr, "webstack") {
+				continue
+			}
+
+			// Extract timer name
+			timerName := strings.TrimSuffix(unitStr, ".timer")
+
+			// Determine schedule from timer name and get service details
+			schedule, command, description := extractSystemdTimerInfo(timerName)
+
+			if schedule == "" || command == "" {
+				continue
+			}
+
+			// Check if already in metadata (look for exact match or similar timer)
+			var exists bool
+			var isDuplicate bool
+			files, err := ioutil.ReadDir(cronMetadataDir)
+			if err == nil {
+				for _, file := range files {
+					if !strings.HasSuffix(file.Name(), ".json") {
+						continue
+					}
+					data, _ := ioutil.ReadFile(filepath.Join(cronMetadataDir, file.Name()))
+					var job Job
+					if json.Unmarshal(data, &job) == nil {
+						// Check for exact match
+						if job.Schedule == schedule && job.Command == command {
+							exists = true
+							break
+						}
+						// Check for duplicate - same timer name but messy JSON format
+						if job.Schedule == schedule && job.Description == description && strings.Contains(job.Command, "{") {
+							// This is an old messy entry for the same timer
+							isDuplicate = true
+							// Remove the duplicate (old format)
+							os.Remove(filepath.Join(cronMetadataDir, file.Name()))
+							break
+						}
+					}
+				}
+			}
+
+			// If it's a duplicate, continue (we'll add the clean version)
+			if isDuplicate {
+				continue
+			}
+
+			// If not exists, add it to metadata
+			if !exists {
+				jobID := getNextJobID()
+				source := "systemd"
+
+				// Determine source from timer name
+				if strings.Contains(timerName, "backup") {
+					source = "backup"
+				} else if strings.Contains(timerName, "certbot") || strings.Contains(timerName, "ssl") {
+					source = "ssl"
+				} else if strings.Contains(timerName, "dns") {
+					source = "dns"
+				}
+
+				job := Job{
+					ID:          jobID,
+					Schedule:    schedule,
+					Command:     command,
+					Description: description,
+					Enabled:     true,
+					Created:     time.Now(),
+					LastStatus:  0,
+					Source:      source,
+				}
+				saveJobMetadata(job)
+			}
+		}
+	}
+}
+
+// extractSystemdTimerInfo extracts schedule and command info from a systemd timer
+func extractSystemdTimerInfo(timerName string) (string, string, string) {
+	// Query systemd for timer details
+	cmd := exec.Command("systemctl", "show", timerName+".timer", "-p", "OnCalendar", "--value")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", "", ""
+	}
+
+	calendarSpec := strings.TrimSpace(string(output))
+
+	// Get the service that this timer activates
+	cmd = exec.Command("systemctl", "show", timerName+".timer", "-p", "Activates", "--value")
+	output, err = cmd.Output()
+	if err != nil {
+		return "", "", ""
+	}
+
+	activatesService := strings.TrimSpace(string(output))
+	if activatesService == "" {
+		activatesService = timerName + ".service"
+	}
+
+	// Get friendly description
+	description := fmt.Sprintf("Systemd timer: %s", strings.TrimSuffix(activatesService, ".service"))
+
+	// Convert OnCalendar format to crontab format (simplified)
+	schedule := convertOnCalendarToCron(calendarSpec)
+
+	// Create a simple command representation for systemd timers
+	command := fmt.Sprintf("systemctl start %s", activatesService)
+
+	return schedule, command, description
+}
+
+// convertOnCalendarToCron converts systemd OnCalendar format to crontab format
+func convertOnCalendarToCron(calendarSpec string) string {
+	// Examples:
+	// "daily" -> "0 0 * * *"
+	// "*-*-* 03:15:00" -> "15 3 * * *"
+	// "Mon-Sun 03:00" -> "0 3 * * *"
+
+	calendarSpec = strings.TrimSpace(calendarSpec)
+
+	// Handle common patterns
+	switch calendarSpec {
+	case "daily":
+		return "0 0 * * *"
+	case "weekly":
+		return "0 0 * * 0"
+	case "monthly":
+		return "0 0 1 * *"
+	}
+
+	// Parse time format like "03:15:00"
+	if strings.Contains(calendarSpec, ":") {
+		parts := strings.Fields(calendarSpec)
+		for _, part := range parts {
+			if strings.Contains(part, ":") {
+				timeParts := strings.Split(part, ":")
+				if len(timeParts) >= 2 {
+					hour := timeParts[0]
+					minute := timeParts[1]
+					// Return crontab format: minute hour * * *
+					return fmt.Sprintf("%s %s * * *", minute, hour)
+				}
+			}
+		}
+	}
+
+	// Default to daily if we can't parse
+	return "0 0 * * *"
 }
 
 // GetWebStackCrons gets only WebStack-managed crons

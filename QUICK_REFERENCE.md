@@ -2,7 +2,7 @@
 
 ## 🎯 Current State Summary
 
-**What Works**: ~90% of core functionality is complete and production-ready
+**What Works**: ~92% of core functionality is complete and production-ready
 **What's Partial**: Database/PHP configuration
 **What's Missing**: Advanced monitoring
 
@@ -63,6 +63,20 @@ sudo webstack firewall blocked                    # List blocked IPs
 sudo webstack firewall save                       # Backup firewall rules
 sudo webstack firewall load /path/to/backup       # Restore firewall rules
 sudo webstack firewall stats                      # Show firewall statistics
+```
+
+### Cron Job Management
+```bash
+sudo webstack cron list                           # View all cron jobs (auto-discovers from backup, SSL, etc.)
+sudo webstack cron add "0 3 * * *" "command"     # Add new manual cron job
+sudo webstack cron add "0 3 * * *" "command" -d "Description"
+sudo webstack cron edit 2 "0 2 * * *" "new-cmd"  # Edit cron (change schedule/command)
+sudo webstack cron delete 2                       # Delete cron job
+sudo webstack cron disable 2                      # Disable cron without deleting
+sudo webstack cron enable 2                       # Re-enable disabled cron
+sudo webstack cron run 2                          # Execute cron immediately
+sudo webstack cron status                         # Show cron system status
+sudo webstack cron logs                           # View cron execution logs
 ```
 
 ### Mail Server (Enterprise)
@@ -150,6 +164,12 @@ sudo webstack backup schedule status              # Check schedule status
 | Backup Verification | ✅ Complete | SHA256 checksums and metadata |
 | Backup Restore | ✅ Complete | Full or selective restore with staging |
 | Backup Export/Import | ✅ Complete | Transfer backups between servers |
+| **Cron Job Management** | **✅ Complete** | **Auto-discovers all system timers** |
+| Cron List | ✅ Complete | Manual + backup/SSL/systemd crons |
+| Cron Add/Edit/Delete | ✅ Complete | Full CRUD for manual crons |
+| Cron Enable/Disable | ✅ Complete | Toggle without deletion |
+| Cron Execution | ✅ Complete | Manual run and logging |
+| Systemd Timer Discovery | ✅ Complete | Auto-discovers webstack-* timers |
 
 ---
 
@@ -162,6 +182,7 @@ internal/         - Implementation logic
   installer/      - Install/uninstall component logic
   domain/         - Domain management and config generation
   ssl/            - SSL certificate management
+  cron/           - Cron job management with systemd discovery
   templates/      - Embedded configuration templates
   config/         - Template processing utilities
 ```
@@ -169,6 +190,7 @@ internal/         - Implementation logic
 ### Data Files
 - `/etc/webstack/domains.json` - Domain configurations and settings
 - `/etc/webstack/ssl.json` - SSL certificate metadata
+- `/etc/webstack/cron/` - Cron job metadata (JSON per job)
 - `/etc/ssl/webstack/` - Self-signed certificates
 - `/etc/letsencrypt/` - Let's Encrypt certificates
 

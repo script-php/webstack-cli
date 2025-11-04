@@ -1,6 +1,34 @@
 # WebStack CLI
 
-A comprehensive command-line tool for managing a complete web development stack on Linux systems with enterprise-grade security.
+A comprehensive command-line tool for managing a complete web development stack on Linux systems with enterprise-grade security. CLI-first architecture with optional UI.
+
+## Why WebStack CLI?
+
+**The Story**: WebStack was born from frustration with existing control panels like Hestia Panel. After using Hestia for years, the limitations became clear:
+
+- **Bloated & resource-heavy** - Hestia Panel requires dedicated resources just for the web interface to run
+- **Needs its own server** - Can't coexist easily with production workloads, takes up 2GB+ RAM
+- **Mountain of dependencies** - Dozens of packages (web server, database, PHP, Node.js, etc.) just to manage a panel
+- **Hard to automate** - Heavy reliance on web UI makes infrastructure-as-code nearly impossible
+- **Vendor lock-in** - Difficult to extend, customize, or integrate with other tools
+- **Brittle upgrades** - Panel updates often break things, no clean rollback mechanism
+
+**The WebStack Approach**:
+
+- **CLI-first, lightweight core** - Everything in one fast executable, zero unnecessary dependencies  
+- **Optional UI layer** - Beautiful dashboard available, but never required - use what you need  
+- **Works on production servers** - Minimal footprint, no resource drain, perfect for shared hosting  
+- **Automation-friendly** - Built for scripts, Ansible, Terraform, and DevOps workflows  
+- **Extensible by design** - Open source Go code, easy to add custom features  
+- **Single binary deployment** - Copy one file and everything works - no installers, no managers  
+
+**Who it's for**:
+- Developers managing their own servers
+- DevOps teams automating server setup
+- Hosting providers wanting lean, fast control panels
+- Anyone who wants tools that actually work with their infrastructure, not against it
+
+---
 
 ## Features
 
@@ -316,6 +344,73 @@ Each backup contains:
 - **Web Configs**: Nginx and Apache configurations
 - **Firewall Rules**: iptables rules and ipset lists
 - **Metadata**: domains.json, ssl.json configuration files
+
+### Cron Job Management
+
+WebStack provides a unified cron manager that automatically discovers and displays all scheduled tasks from:
+- ✅ Manual cron jobs created via `webstack cron add`
+- ✅ Backup system cleanup crons
+- ✅ SSL certificate renewal timers
+- ✅ All systemd timers with `webstack-*` prefix
+
+#### View All Scheduled Jobs
+
+```bash
+# List all cron jobs (manual + auto-discovered from backup, SSL, systemd timers)
+sudo webstack cron list
+
+# Output shows ID, schedule, command, type (webstack/custom), and status
+# Example:
+# ID   Schedule      Type       Command                              Status
+# 1    0 4 * * *     webstack   /usr/local/bin/webstack-backup...   ✓
+# 4    0 0 * * *     webstack   systemctl start webstack-backup...  ✓
+# 5    0 0 * * *     webstack   systemctl start webstack-certbot...  ✓
+```
+
+#### Create & Manage Manual Crons
+
+```bash
+# Add a new cron job
+sudo webstack cron add "0 3 * * *" "sudo webstack ssl renew" -d "Daily SSL renewal check"
+
+# Edit an existing cron (change schedule or command)
+sudo webstack cron edit 2 "0 2 * * *" "sudo webstack ssl renew"
+
+# Disable a cron without deleting it (can re-enable later)
+sudo webstack cron disable 2
+
+# Enable a previously disabled cron
+sudo webstack cron enable 2
+
+# Run a cron job immediately (for testing)
+sudo webstack cron run 2
+
+# Delete a cron job permanently
+sudo webstack cron delete 2
+
+# View detailed status of all crons
+sudo webstack cron status
+
+# View cron execution logs
+sudo webstack cron logs
+```
+
+#### Cron Schedule Format
+
+Crontab schedule uses 5 fields: `minute hour day month weekday`
+
+```
+# Common schedules
+0 0 * * *       # Daily at midnight
+0 * * * *       # Hourly
+0 0 * * 0       # Weekly (Sundays)
+0 0 1 * *       # Monthly (1st of month)
+*/15 * * * *    # Every 15 minutes
+0 2,14 * * *    # Twice daily (2 AM and 2 PM)
+0 0 * * 1-5     # Weekdays only
+```
+
+**Note**: All automatic crons are tracked with source information (backup, ssl, systemd, etc.) and can be viewed in `cron list`.
 
 ### Mail Server Management
 
