@@ -1047,6 +1047,17 @@ func checkPostgreSQLRemoteAccessStatus() {
 func setupCoreSecurity() {
 	fmt.Println("🔒 Setting up core security infrastructure...")
 
+	// Remove UFW if installed (conflicts with iptables)
+	fmt.Println("   Checking for UFW conflicts...")
+	ufwOutput, err := exec.Command("dpkg", "-l").Output()
+	if err == nil && strings.Contains(string(ufwOutput), "ufw") {
+		fmt.Println("   ⚠️  UFW detected, removing to avoid conflicts with iptables...")
+		exec.Command("bash", "-c", "systemctl disable ufw 2>/dev/null || true").Run()
+		exec.Command("bash", "-c", "systemctl stop ufw 2>/dev/null || true").Run()
+		exec.Command("apt", "remove", "-y", "ufw").Run()
+		fmt.Println("   ✓ UFW removed")
+	}
+
 	// Core security packages - installed once for all components
 	coreSecurityPkgs := []string{
 		"iptables",            // Kernel firewall engine

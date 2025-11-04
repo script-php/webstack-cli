@@ -1,37 +1,83 @@
 # WebStack CLI
 
-A comprehensive command-line tool for managing a complete web development stack on Linux systems.
+A comprehensive command-line tool for managing a complete web development stack on Linux systems with enterprise-grade security.
 
 ## Features
 
-- **Web Servers**: Install and configure Nginx (port 80) and Apache (port 8080)
-- **Databases**: Interactive installation of MySQL/MariaDB and PostgreSQL
-- **DNS Server**: Full-featured Bind9 DNS server with master/slave replication and clustering
-- **PHP Versions**: Support for PHP-FPM versions 5.6 to 8.4
-- **Domain Management**: Add, edit, and delete domains with backend selection
-- **SSL Management**: Let's Encrypt SSL certificate management
+### Web Servers
+- **Nginx**: Direct PHP-FPM processing on port 80/443
+- **Apache**: Optional backend deployment with Nginx proxy
+- **Automatic Firewall Management**: Ports 80/443 automatically opened/closed on install/uninstall
+
+### Databases
+- **MySQL/MariaDB**: Full support with remote access management
+- **PostgreSQL**: Complete installation with remote access control
+- **Automatic Database Ports**: Port 3306 (MySQL) / 5432 (PostgreSQL) managed by firewall
+- **Remote Access Control**: Enable/disable remote connections with `sudo webstack system remote-access`
+
+### Mail Server (Enterprise Features)
+- **Exim4 SMTP**: Multiple version support (4.94, 4.95, 4.97+) with auto-detection
+- **Dovecot IMAP/POP3**: Full email access with Sieve filtering
+- **SpamAssassin**: Real-time spam detection with spamd socket integration
+- **ClamAV**: Optional antivirus scanning for attachments
+- **DKIM Signing**: Per-domain email authentication
+- **DNSBL/RBL Checking**: Real-time spam list protection (SpamCop, Spamhaus, SURBL)
+- **SRS (Sender Rewriting Scheme)**: Ensures SPF compliance for forwarded mail
+- **SMTP Relay**: Per-domain upstream smarthost configuration
+- **Automatic Mail Ports**: All 7 ports (25, 143, 110, 587, 465, 993, 995) auto-managed
+
+### DNS Server (Bind9)
+- **Master/Slave Replication**: Full master-slave DNS setup
+- **DNSSEC Support**: Optional DNSSEC validation
+- **Clustering**: Multi-server DNS clusters with replication
+- **Query Logging**: Optional detailed query logging
+- **Zone Management**: Easy zone configuration
+- **Automatic DNS Ports**: Port 53 TCP/UDP auto-managed by firewall
+
+### Security Features (Production-Ready)
+- **Core Security Infrastructure**: iptables, ipset, fail2ban (auto-installed once)
+- **SSH Protection**: Port 22 always protected, never locked out
+- **Firewall Management**: Automatic port opening/closing with component installation
+- **IPv4 & IPv6 Support**: All firewall rules support both protocols
+- **Fail2Ban Integration**: Automatic brute-force protection for mail and SSH
+- **ipset Blocking**: Efficient IP blocking with O(1) lookup for 100K+ IPs
+- **Persistent Rules**: All firewall rules survive system reboots
+- **Per-Component Security**: Each component integrates with core firewall automatically
+
+### Firewall Management
+- **Manual Port Control**: Open/close ports on demand with `webstack firewall`
+- **IP Blocking**: Block/unblock malicious IP addresses
+- **Rule Backup/Restore**: Save and restore firewall configurations
+- **Port Status**: View all active firewall rules and statistics
+- **Auto-Save Rules**: All rules persist across system reboots
+- **IPv4 & IPv6**: Full support for both protocols
+- **Reset Options**: Flush or restore to default configuration
+
+### PHP Versions
+- Support for PHP 5.6 to 8.4 with multiple FPM pools
+- Isolated configurations per version
+
+### Domain Management
+- Add, edit, delete domains with backend selection
+- Dynamic domain configuration per service
+
+### SSL Management  
+- Let's Encrypt certificate automation
+- Self-signed certificate support
+- Automatic certificate renewal
 
 ## Installation
 
 ### Quick Start (Recommended)
 
-Complete system setup with CLI, service integration, and directory structure:
+Complete system setup:
 ```bash
 curl -fsSL https://your-domain.com/install.sh | sudo bash
 ```
 
-This installs:
-- ✅ WebStack CLI binary to `/usr/local/bin`
-- ✅ System directories with proper permissions
-- ✅ Systemd service integration
-- ✅ Log rotation configuration
-- ✅ Foundation for web control panel (coming soon)
-
 ### Manual Installation
 
-For manual control:
 ```bash
-# Download latest release
 wget https://github.com/script-php/webstack-cli/releases/latest/download/webstack-linux-amd64
 chmod +x webstack-linux-amd64
 sudo mv webstack-linux-amd64 /usr/local/bin/webstack
@@ -48,29 +94,62 @@ sudo make install
 ## Usage
 
 ### Prerequisites
-- Ubuntu/Debian Linux system
+- Ubuntu/Debian Linux system (20.04, 22.04, 24.04 LTS recommended)
 - Root privileges (run with sudo)
 
 ### Install Complete Stack
 
-Install everything with interactive prompts:
 ```bash
 sudo webstack install all
 ```
 
 ### Install Individual Components
 
+#### Web Servers
 ```bash
-# Web servers
 sudo webstack install nginx
 sudo webstack install apache
+```
 
-# Databases
+#### Databases
+```bash
 sudo webstack install mysql
 sudo webstack install mariadb
 sudo webstack install postgresql
+```
 
-# PHP versions
+#### Mail Server (Enterprise Features)
+```bash
+# Install with all features
+sudo webstack mail install example.com --spam --av
+
+# Install basic mail (Exim4 + Dovecot only)
+sudo webstack mail install example.com
+
+# Check mail server status
+sudo webstack mail status
+
+# Uninstall (automatically closes firewall ports)
+sudo webstack mail uninstall
+```
+
+#### DNS Server
+```bash
+# Master DNS server
+sudo webstack dns install --mode master
+
+# Slave DNS server (replicates from master)
+sudo webstack dns install --mode slave --master-ip 192.168.1.10
+
+# With clustering
+sudo webstack dns install --mode master --cluster-name prod-cluster
+
+# Uninstall (automatically closes DNS port 53)
+sudo webstack dns uninstall
+```
+
+#### PHP Versions
+```bash
 sudo webstack install php 8.2
 sudo webstack install php 7.4
 ```
@@ -78,28 +157,29 @@ sudo webstack install php 7.4
 ### Domain Management
 
 ```bash
-# Add a domain (interactive)
+# Add a domain
 sudo webstack domain add example.com
 
-# Add domain with specific backend and PHP version
+# With specific backend and PHP version
 sudo webstack domain add example.com --backend nginx --php 8.2
-sudo webstack domain add api.example.com --backend apache --php 7.4
 
-# Edit domain configuration
+# Edit domain
 sudo webstack domain edit example.com --backend apache --php 8.3
 
 # List all domains
 sudo webstack domain list
 
-# Delete a domain
+# Delete domain
 sudo webstack domain delete example.com
 ```
 
 ### SSL Management
 
 ```bash
-# Enable SSL for a domain
+# Enable Let's Encrypt SSL
 sudo webstack ssl enable example.com --email admin@example.com --type letsencrypt
+
+# Enable self-signed SSL
 sudo webstack ssl enable example.com --email admin@example.com --type selfsigned
 
 # Disable SSL
@@ -116,215 +196,322 @@ sudo webstack ssl status example.com
 sudo webstack ssl status  # All domains
 ```
 
-### DNS Server Management (Bind9)
+### Mail Server Management
 
-#### Installation
-
+#### Add Mail Users
 ```bash
-# Install as master DNS server
-sudo webstack dns install
-
-# Install as slave DNS server with master IP
-sudo webstack dns install --mode slave --master-ip 192.168.1.10
-
-# Install with clustering support
-sudo webstack dns install --mode master --cluster-name datacenter-1
-sudo webstack dns install --mode slave --master-ip 192.168.1.10 --cluster-name datacenter-1
+sudo webstack mail add user@example.com
+sudo webstack mail delete user@example.com
+sudo webstack mail list example.com
 ```
 
-#### Service Control
-
+#### Check Mail Status
 ```bash
-# Check DNS status
+sudo webstack mail status
+```
+
+#### Mail Features
+- **Spam Detection**: Emails automatically scored by SpamAssassin
+  - View scores: `tail -f /var/log/exim4/mainlog | grep spam`
+- **Antivirus Scanning**: Optional ClamAV integration
+  - Enable: Add `--av` flag during install
+- **DKIM Signing**: Automatic per-domain
+  - Public key location: `/etc/exim4/domains/[domain]/dkim.pem`
+- **Fail2Ban Protection**: Auto-bans after 5 failed login attempts
+  - Check bans: `sudo fail2ban-client status exim4`
+
+### DNS Server Management
+
+#### Service Control
+```bash
 sudo webstack dns status
-
-# Restart DNS service
 sudo webstack dns restart
-
-# Reload configuration (without restarting)
 sudo webstack dns reload
-
-# Validate configuration
 sudo webstack dns check
 ```
 
 #### Zone Management
-
 ```bash
-# List all configured zones
 sudo webstack dns zones
-
-# Add a new master zone
 sudo webstack dns config --zone example.com --type master
-
-# Add a slave zone
 sudo webstack dns config --zone example.com --type slave
-
-# Add slave server to replication
 sudo webstack dns config --add-slave 192.168.1.20
-
-# Remove slave server from replication
 sudo webstack dns config --remove-slave 192.168.1.20
 ```
 
-#### Monitoring & Diagnostics
-
-```bash
-# Test DNS query
-sudo webstack dns query example.com
-
-# View DNS logs
-sudo webstack dns logs --lines 50
-
-# Display query statistics
-sudo webstack dns stats
-```
-
 #### Advanced Features
-
 ```bash
 # Enable DNSSEC validation
 sudo webstack dns dnssec --enable
 
-# Disable DNSSEC validation
-sudo webstack dns dnssec --disable
-
 # Enable query logging
 sudo webstack dns querylog --enable
 
-# Disable query logging
-sudo webstack dns querylog --disable
-
-# Backup DNS configuration
+# Backup configuration
 sudo webstack dns backup
 
 # Restore from backup
 sudo webstack dns restore /tmp/dns-backup-20251103_012855.tar.gz
 
-# Uninstall DNS server
-sudo webstack dns uninstall
+# Test DNS query
+sudo webstack dns query example.com
 ```
 
-#### Master-Slave Setup Example
+### Security & Firewall Management
 
-**Master Server (192.168.1.10):**
+#### Firewall Management Commands
 ```bash
-# Install as master
-sudo webstack dns install --mode master --server-ip 192.168.1.10
+# View all firewall rules
+sudo webstack firewall status
 
-# Add zone
-sudo webstack dns config --zone example.com --type master
+# Open a specific port
+sudo webstack firewall open 8080 tcp       # Open TCP port 8080
+sudo webstack firewall open 5353 udp       # Open UDP port 5353
+sudo webstack firewall open 9000 both      # Open both TCP and UDP
 
-# Add slave server
-sudo webstack dns config --add-slave 192.168.1.20
+# Close a specific port
+sudo webstack firewall close 8080 tcp
+sudo webstack firewall close 5353 both
+
+# Block/Unblock IP addresses
+sudo webstack firewall block 192.168.1.100
+sudo webstack firewall unblock 192.168.1.100
+sudo webstack firewall blocked              # List all blocked IPs
+
+# Firewall rules management
+sudo webstack firewall save                 # Backup firewall rules
+sudo webstack firewall load /path/to/backup # Restore from backup
+sudo webstack firewall flush                # Remove custom rules (keeps SSH)
+sudo webstack firewall restore              # Restore default config
+sudo webstack firewall stats                # Show rule statistics
 ```
 
-**Slave Server (192.168.1.20):**
+#### System Security Setup
 ```bash
-# Install as slave pointing to master
-sudo webstack dns install --mode slave --master-ip 192.168.1.10 --server-ip 192.168.1.20
-
-# Add slave zone for same domain
-sudo webstack dns config --zone example.com --type slave
+# Core security is auto-installed by first component
+# No manual action needed, but can verify:
+sudo iptables -L -n | grep "dpt:22"  # SSH always open
+sudo fail2ban-client status          # Check Fail2Ban jails
 ```
 
+#### Database Remote Access Management
+```bash
+# Enable remote access for MySQL/MariaDB
+sudo webstack system remote-access enable mysql root password
 
-## Configuration
+# Disable remote access
+sudo webstack system remote-access disable mysql
 
-### Backend Options
+# Check status
+sudo webstack system remote-access status mysql
 
-- **nginx**: Direct PHP-FPM processing through Nginx
-- **apache**: Nginx proxy to Apache (Apache handles PHP)
-
-### Supported PHP Versions
-
-- PHP 5.6, 7.0, 7.1, 7.2, 7.3, 7.4
-- PHP 8.0, 8.1, 8.2, 8.3, 8.4
-
-### Default Ports
-
-- **Nginx**: 80 (HTTP), 443 (HTTPS)
-- **Apache**: 8080 (HTTP), 8443 (HTTPS)
-- **Bind9 DNS**: 53 (TCP/UDP)
-- **MySQL/MariaDB**: 3306
-- **PostgreSQL**: 5432
-
-## Directory Structure
-
-```
-/var/www/[domain]/          # Domain document roots
-/etc/webstack/              # Configuration storage
-  ├── domains.json          # Domain configurations
-  └── ssl.json              # SSL certificate info
-/etc/nginx/sites-enabled/   # Nginx domain configs
-/etc/apache2/sites-enabled/ # Apache domain configs
+# Same for PostgreSQL
+sudo webstack system remote-access enable postgresql postgres password
+sudo webstack system remote-access disable postgresql
+sudo webstack system remote-access status postgresql
 ```
 
-## Examples
+#### Firewall Rules Status
+```bash
+# View all firewall rules
+sudo iptables -L -n
 
-### Complete Setup Example
+# View specific port
+sudo iptables -L -n | grep "dpt:80"
 
-1. Install the full stack:
-   ```bash
-   sudo webstack install all
-   ```
+# Check persistent rules
+sudo cat /etc/iptables/rules.v4
 
-2. Setup DNS server:
-   ```bash
-   sudo webstack dns install --mode master
-   sudo webstack dns config --zone example.com --type master
-   ```
+# Check Fail2Ban status
+sudo fail2ban-client status
+sudo fail2ban-client status exim4
+sudo fail2ban-client status dovecot
 
-3. Add a WordPress site:
-   ```bash
-   sudo webstack domain add mysite.com --backend nginx --php 8.2
-   ```
+# View banned IPs
+sudo ipset list banned_ips
+```
 
-4. Enable SSL:
-   ```bash
-   sudo webstack ssl enable mysite.com --email admin@mysite.com
-   ```
+## Firewall & Security Architecture
 
-5. Add an API subdomain using Apache:
-   ```bash
-   sudo webstack domain add api.mysite.com --backend apache --php 8.1
-   ```
+### Automatic Port Management
+
+When you install components, ports are **automatically opened**:
+
+| Component | Ports | Action |
+|-----------|-------|--------|
+| **Nginx** | 80, 443 | Auto-open on install, auto-close on uninstall |
+| **Apache** | 80, 443 | Auto-open on install, auto-close on uninstall |
+| **Mail Server** | 25, 143, 110, 587, 465, 993, 995 | Auto-open on install, auto-close on uninstall |
+| **DNS (Bind9)** | 53 (TCP/UDP) | Auto-open on install, auto-close on uninstall |
+| **MySQL/MariaDB** | 3306 | Auto-open when remote access enabled, auto-close when disabled |
+| **PostgreSQL** | 5432 | Auto-open when remote access enabled, auto-close when disabled |
+| **SSH** | 22 | Always open (protected by Fail2Ban) |
+
+### Manual Firewall Management
+
+Use the `webstack firewall` command to manually manage ports and IP blocking:
+
+```bash
+# View current firewall status
+sudo webstack firewall status
+
+# Open custom ports
+sudo webstack firewall open 8080 tcp          # TCP only
+sudo webstack firewall open 5353 udp          # UDP only
+sudo webstack firewall open 9000 both         # Both TCP and UDP
+
+# Close ports
+sudo webstack firewall close 8080 tcp
+sudo webstack firewall close 9000 both
+
+# Block malicious IPs
+sudo webstack firewall block 192.168.1.100    # Add to blocklist
+sudo webstack firewall unblock 192.168.1.100  # Remove from blocklist
+sudo webstack firewall blocked                # Show all blocked IPs
+
+# Backup and restore rules
+sudo webstack firewall save                   # Backup to /etc/webstack/firewall-backup.tar.gz
+sudo webstack firewall load /path/to/backup   # Restore from backup
+sudo webstack firewall stats                  # Show rule statistics
+
+# Reset firewall
+sudo webstack firewall flush                  # Remove custom rules (SSH preserved)
+sudo webstack firewall restore                # Restore default configuration
+```
+
+### Three-Layer Security Model
+
+```
+LAYER 1: Core Infrastructure (System-Level)
+  ├─ iptables        (Kernel firewall engine)
+  ├─ iptables-persistent (Persist rules across reboots)
+  ├─ ipset           (Efficient IP list management - O(1) lookup)
+  └─ fail2ban        (Automatic brute-force protection)
+         ▲
+         │ Shared by all components
+         │ ⚠️ UFW automatically removed (conflicts with iptables)
+         │
+LAYER 2: Component-Specific
+  ├─ Mail (Exim4, Dovecot, SpamAssassin)
+  ├─ DNS (Bind9)
+  ├─ Web (Nginx, Apache)
+  └─ Database (MySQL, PostgreSQL)
+         ▲
+         │
+LAYER 3: Component Configuration
+  ├─ Fail2Ban jails per service
+  ├─ iptables rules per service
+  └─ ipset lists per service
+```
+
+### Fail2Ban Integration
+
+Automatic brute-force protection for:
+
+```
+Mail:
+  ├─ exim4 jail      (SMTP AUTH failures)
+  └─ dovecot jail    (IMAP/POP3 AUTH failures)
+  
+SSH:
+  └─ sshd jail       (SSH login failures)
+```
+
+**Auto-ban behavior**: 5 failures in 10 minutes → 10-minute ban
+
+**View active bans**:
+```bash
+sudo fail2ban-client status exim4
+sudo fail2ban-client status dovecot
+sudo ipset list banned_ips
+```
+
+### Firewall Rules Status
+```bash
+# View all firewall rules
+sudo iptables -L -n
+
+# View specific port
+sudo iptables -L -n | grep "dpt:80"
+
+# Check persistent rules
+sudo cat /etc/iptables/rules.v4
+
+# Check Fail2Ban status
+sudo fail2ban-client status
+sudo fail2ban-client status exim4
+sudo fail2ban-client status dovecot
+
+# View blocked IPs
+sudo ipset list banned_ips
+```
+
+## Configuration Examples
+
+### Complete Enterprise Setup
+
+```bash
+# 1. Install core stack
+sudo webstack install all
+
+# 2. Install mail server with full features
+sudo webstack mail install mail.example.com --spam --av
+
+# 3. Setup master DNS server
+sudo webstack dns install --mode master --cluster-name prod
+
+# 4. Add mail domain
+sudo webstack domain add mail.example.com --backend nginx --php 8.2
+
+# 5. Enable SSL
+sudo webstack ssl enable mail.example.com --email admin@example.com
+
+# 6. Enable database remote access (if needed)
+sudo webstack system remote-access enable mysql dbadmin password
+
+# Result: Fully configured production system with:
+# ✅ Mail server (7 ports auto-managed)
+# ✅ DNS server (port 53 auto-managed)
+# ✅ Web services (ports 80/443 auto-managed)
+# ✅ Database (port 3306 auto-managed)
+# ✅ SSH protected (port 22)
+# ✅ Fail2Ban monitoring (auto-banning brute-forcers)
+```
 
 ### Multi-Server DNS Cluster
 
-**Server 1 (Master - 192.168.1.10):**
+**Master Server (192.168.1.10)**:
 ```bash
-# Install DNS master
-sudo webstack dns install --mode master --cluster-name prod-cluster
-
-# Add zones
+sudo webstack dns install --mode master --cluster-name datacenter-1
 sudo webstack dns config --zone example.com --type master
-sudo webstack dns config --zone api.example.com --type master
-
-# Add slave servers
 sudo webstack dns config --add-slave 192.168.1.20
 sudo webstack dns config --add-slave 192.168.1.30
 ```
 
-**Server 2 & 3 (Slaves):**
+**Slave Servers (192.168.1.20, 192.168.1.30)**:
 ```bash
-# Install DNS slave
-sudo webstack dns install --mode slave --master-ip 192.168.1.10 --cluster-name prod-cluster
-
-# Configure slave zones
+sudo webstack dns install --mode slave --master-ip 192.168.1.10 --cluster-name datacenter-1
 sudo webstack dns config --zone example.com --type slave
-sudo webstack dns config --zone api.example.com --type slave
 ```
 
-### Multi-PHP Setup
+### Mail Server with Spam/Antivirus Protection
 
-Run different sites with different PHP versions:
 ```bash
-# Legacy site with old PHP
-sudo webstack domain add legacy.com --backend apache --php 7.4
+# Install with full protection
+sudo webstack mail install mail.example.com --spam --av
 
-# Modern site with latest PHP
-sudo webstack domain add modern.com --backend nginx --php 8.4
+# Add users
+sudo webstack mail add user1@mail.example.com
+sudo webstack mail add user2@mail.example.com
+
+# Monitor spam scoring
+tail -f /var/log/exim4/mainlog | grep "X-Spam-Score"
+
+# Check antivirus activity
+tail -f /var/log/clamav/clamd.log
+
+# View Fail2Ban activity
+sudo fail2ban-client status exim4
 ```
 
 ## Troubleshooting
@@ -335,66 +522,104 @@ sudo systemctl status nginx
 sudo systemctl status apache2
 sudo systemctl status mysql
 sudo systemctl status postgresql
+sudo systemctl status exim4
+sudo systemctl status dovecot
 sudo systemctl status bind9
-sudo systemctl status php8.2-fpm
 ```
 
-### View Logs
+### View Security Logs
 ```bash
-# Nginx logs
-sudo tail -f /var/log/nginx/error.log
-sudo tail -f /var/log/nginx/[domain].error.log
+# Mail logs with spam scores
+sudo tail -f /var/log/exim4/mainlog
 
-# Apache logs
-sudo tail -f /var/log/apache2/error.log
-sudo tail -f /var/log/apache2/[domain].error.log
+# Dovecot authentication logs
+sudo tail -f /var/log/dovecot
 
-# Bind9 DNS logs
-sudo tail -f /var/log/named/default.log
+# Fail2Ban activity
+sudo tail -f /var/log/fail2ban.log
 
-# PHP-FPM logs
-sudo tail -f /var/log/php8.2-fpm.log
+# Firewall rules
+sudo iptables -L -n -v
+
+# Blocked IPs
+sudo ipset list banned_ips
 ```
 
 ### DNS Troubleshooting
 ```bash
-# Validate DNS configuration
+# Validate configuration
 sudo webstack dns check
 
-# Test DNS queries
+# Test DNS query
 sudo webstack dns query example.com
 dig @127.0.0.1 example.com
 
-# View DNS logs
+# Check DNS logs
 sudo webstack dns logs --lines 100
 
-# Check DNS statistics
-sudo webstack dns stats
-
-# Restart DNS service if issues occur
+# Restart service
 sudo webstack dns restart
 ```
 
-### Reload Configurations
+### Mail Troubleshooting
 ```bash
-sudo systemctl reload nginx
-sudo systemctl reload apache2
-sudo webstack dns reload
-sudo systemctl restart php8.2-fpm
+# Check if mail services are running
+sudo systemctl status exim4
+sudo systemctl status dovecot
+sudo systemctl status spamassassin
+
+# Verify DKIM key exists
+ls -la /etc/exim4/domains/example.com/dkim.pem
+
+# Test spam scoring
+echo "VIAGRA BUY NOW" | spamc -U /run/spamd.sock -c
+
+# View mail queue
+sudo exim4 -bp
+
+# Restart mail services
+sudo systemctl restart exim4 dovecot
 ```
 
-## Security Notes
+### Firewall Troubleshooting
+```bash
+# View all rules
+sudo iptables -L -n -v
 
-- All installations use secure defaults
-- PHP-FPM pools are isolated per version
-- SSL certificates are automatically managed
-- Security headers are enabled by default
-- Sensitive files are protected via web server rules
+# View specific port
+sudo iptables -L -n | grep "dpt:80"
+
+# Check if SSH is still accessible
+sudo iptables -L -n | grep "dpt:22"
+
+# View persistent rules
+sudo cat /etc/iptables/rules.v4
+
+# Reload rules if modified
+sudo systemctl restart iptables-persistent
+```
+
+## Security Best Practices
+
+1. **UFW Automatically Removed**: When core security is installed, UFW is automatically removed if present (to avoid conflicts with iptables)
+2. **Always Enable SSH Protection**: Port 22 is automatically protected by Fail2Ban
+3. **Use Remote Access Carefully**: Only enable database remote access when needed
+4. **Monitor Logs**: Regularly check `/var/log/fail2ban.log` for activity
+5. **Update Certificates**: SSL certificates auto-renew, verify with `sudo webstack ssl status`
+6. **Backup DNS**: Use `sudo webstack dns backup` regularly
+7. **Monitor Mail**: Check spam scores with `tail -f /var/log/exim4/mainlog`
+
+## Performance Notes
+
+- **ipset**: O(1) lookup time for IP blocking (efficient even with 100K+ IPs)
+- **iptables-persistent**: Rules loaded at boot (zero runtime overhead)
+- **Fail2Ban**: Regex-based log monitoring (minimal CPU impact)
+- **SpamAssassin**: spamd daemon (pre-forked, efficient)
 
 ## Contributing
 
-This tool is designed to be modular and extensible. Template files are located in the `templates/` directory and can be customized as needed.
+This tool is modular and extensible. Configuration templates are in `templates/` directory.
 
 ## License
 
-This project adapts configuration templates from Hestia Control Panel while creating an independent CLI tool for web stack management.
+Adapted from Hestia Control Panel configurations, built as independent CLI tool for web stack management.
