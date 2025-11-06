@@ -386,30 +386,6 @@ Crontab schedule uses 5 fields: `minute hour day month weekday`
 
 **Note**: All automatic crons are tracked with source information (backup, ssl, systemd, etc.) and can be viewed in `cron list`.
 
-### Mail Server Management
-
-#### Add Mail Users
-```bash
-sudo webstack mail add user@example.com
-sudo webstack mail delete user@example.com
-sudo webstack mail list example.com
-```
-
-#### Check Mail Status
-```bash
-sudo webstack mail status
-```
-
-#### Mail Features
-- **Spam Detection**: Emails automatically scored by SpamAssassin
-  - View scores: `tail -f /var/log/exim4/mainlog | grep spam`
-- **Antivirus Scanning**: Optional ClamAV integration
-  - Enable: Add `--av` flag during install
-- **DKIM Signing**: Automatic per-domain
-  - Public key location: `/etc/exim4/domains/[domain]/dkim.pem`
-- **Fail2Ban Protection**: Auto-bans after 5 failed login attempts
-  - Check bans: `sudo fail2ban-client status exim4`
-
 ### DNS Server Management
 
 #### Service Control
@@ -622,8 +598,6 @@ sudo cat /etc/iptables/rules.v4
 
 # Check Fail2Ban status
 sudo fail2ban-client status
-sudo fail2ban-client status exim4
-sudo fail2ban-client status dovecot
 
 # View blocked IPs
 sudo ipset list banned_ips
@@ -681,19 +655,11 @@ sudo systemctl status nginx
 sudo systemctl status apache2
 sudo systemctl status mysql
 sudo systemctl status postgresql
-sudo systemctl status exim4
-sudo systemctl status dovecot
 sudo systemctl status bind9
 ```
 
 ### View Security Logs
 ```bash
-# Mail logs with spam scores
-sudo tail -f /var/log/exim4/mainlog
-
-# Dovecot authentication logs
-sudo tail -f /var/log/dovecot
-
 # Fail2Ban activity
 sudo tail -f /var/log/fail2ban.log
 
@@ -719,8 +685,6 @@ sudo webstack dns logs --lines 100
 # Restart service
 sudo webstack dns restart
 ```
-
-### DNS Troubleshooting
 
 ### Backup Troubleshooting
 ```bash
@@ -782,14 +746,12 @@ sudo systemctl restart iptables-persistent
 4. **Monitor Logs**: Regularly check `/var/log/fail2ban.log` for activity
 5. **Update Certificates**: SSL certificates auto-renew, verify with `sudo webstack ssl status`
 6. **Backup DNS**: Use `sudo webstack dns backup` regularly
-7. **Monitor Mail**: Check spam scores with `tail -f /var/log/exim4/mainlog`
 
 ## Performance Notes
 
 - **ipset**: O(1) lookup time for IP blocking (efficient even with 100K+ IPs)
 - **iptables-persistent**: Rules loaded at boot (zero runtime overhead)
 - **Fail2Ban**: Regex-based log monitoring (minimal CPU impact)
-- **SpamAssassin**: spamd daemon (pre-forked, efficient)
 
 ## Contributing
 
