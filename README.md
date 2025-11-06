@@ -43,17 +43,6 @@ A comprehensive command-line tool for managing a complete web development stack 
 - **Automatic Database Ports**: Port 3306 (MySQL) / 5432 (PostgreSQL) managed by firewall
 - **Remote Access Control**: Enable/disable remote connections with `sudo webstack system remote-access`
 
-### Mail Server (Enterprise Features)
-- **Exim4 SMTP**: Multiple version support (4.94, 4.95, 4.97+) with auto-detection
-- **Dovecot IMAP/POP3**: Full email access with Sieve filtering
-- **SpamAssassin**: Real-time spam detection with spamd socket integration
-- **ClamAV**: Optional antivirus scanning for attachments
-- **DKIM Signing**: Per-domain email authentication
-- **DNSBL/RBL Checking**: Real-time spam list protection (SpamCop, Spamhaus, SURBL)
-- **SRS (Sender Rewriting Scheme)**: Ensures SPF compliance for forwarded mail
-- **SMTP Relay**: Per-domain upstream smarthost configuration
-- **Automatic Mail Ports**: All 7 ports (25, 143, 110, 587, 465, 993, 995) auto-managed
-
 ### DNS Server (Bind9)
 - **Master/Slave Replication**: Full master-slave DNS setup
 - **DNSSEC Support**: Optional DNSSEC validation
@@ -67,7 +56,7 @@ A comprehensive command-line tool for managing a complete web development stack 
 - **SSH Protection**: Port 22 always protected, never locked out
 - **Firewall Management**: Automatic port opening/closing with component installation
 - **IPv4 & IPv6 Support**: All firewall rules support both protocols
-- **Fail2Ban Integration**: Automatic brute-force protection for mail and SSH
+- **Fail2Ban Integration**: Automatic brute-force protection for SSH
 - **ipset Blocking**: Efficient IP blocking with O(1) lookup for 100K+ IPs
 - **Persistent Rules**: All firewall rules survive system reboots
 - **Per-Component Security**: Each component integrates with core firewall automatically
@@ -153,21 +142,6 @@ sudo webstack install apache
 sudo webstack install mysql
 sudo webstack install mariadb
 sudo webstack install postgresql
-```
-
-#### Mail Server (Enterprise Features)
-```bash
-# Install with all features
-sudo webstack mail install example.com --spam --av
-
-# Install basic mail (Exim4 + Dovecot only)
-sudo webstack mail install example.com
-
-# Check mail server status
-sudo webstack mail status
-
-# Uninstall (automatically closes firewall ports)
-sudo webstack mail uninstall
 ```
 
 #### DNS Server
@@ -557,7 +531,6 @@ When you install components, ports are **automatically opened**:
 |-----------|-------|--------|
 | **Nginx** | 80, 443 | Auto-open on install, auto-close on uninstall |
 | **Apache** | 80, 443 | Auto-open on install, auto-close on uninstall |
-| **Mail Server** | 25, 143, 110, 587, 465, 993, 995 | Auto-open on install, auto-close on uninstall |
 | **DNS (Bind9)** | 53 (TCP/UDP) | Auto-open on install, auto-close on uninstall |
 | **MySQL/MariaDB** | 3306 | Auto-open when remote access enabled, auto-close when disabled |
 | **PostgreSQL** | 5432 | Auto-open when remote access enabled, auto-close when disabled |
@@ -608,7 +581,6 @@ LAYER 1: Core Infrastructure (System-Level)
          │ ⚠️ UFW automatically removed (conflicts with iptables)
          │
 LAYER 2: Component-Specific
-  ├─ Mail (Exim4, Dovecot, SpamAssassin)
   ├─ DNS (Bind9)
   ├─ Web (Nginx, Apache)
   └─ Database (MySQL, PostgreSQL)
@@ -625,10 +597,6 @@ LAYER 3: Component Configuration
 Automatic brute-force protection for:
 
 ```
-Mail:
-  ├─ exim4 jail      (SMTP AUTH failures)
-  └─ dovecot jail    (IMAP/POP3 AUTH failures)
-  
 SSH:
   └─ sshd jail       (SSH login failures)
 ```
@@ -637,8 +605,7 @@ SSH:
 
 **View active bans**:
 ```bash
-sudo fail2ban-client status exim4
-sudo fail2ban-client status dovecot
+sudo fail2ban-client status sshd
 sudo ipset list banned_ips
 ```
 
@@ -670,23 +637,19 @@ sudo ipset list banned_ips
 # 1. Install core stack
 sudo webstack install all
 
-# 2. Install mail server with full features
-sudo webstack mail install mail.example.com --spam --av
-
-# 3. Setup master DNS server
+# 2. Setup master DNS server
 sudo webstack dns install --mode master --cluster-name prod
 
-# 4. Add mail domain
-sudo webstack domain add mail.example.com --backend nginx --php 8.2
+# 3. Add domain
+sudo webstack domain add example.com --backend nginx --php 8.2
 
-# 5. Enable SSL
-sudo webstack ssl enable mail.example.com --email admin@example.com
+# 4. Enable SSL
+sudo webstack ssl enable example.com --email admin@example.com
 
-# 6. Enable database remote access (if needed)
+# 5. Enable database remote access (if needed)
 sudo webstack system remote-access enable mysql dbadmin password
 
 # Result: Fully configured production system with:
-# ✅ Mail server (7 ports auto-managed)
 # ✅ DNS server (port 53 auto-managed)
 # ✅ Web services (ports 80/443 auto-managed)
 # ✅ Database (port 3306 auto-managed)
@@ -710,27 +673,7 @@ sudo webstack dns install --mode slave --master-ip 192.168.1.10 --cluster-name d
 sudo webstack dns config --zone example.com --type slave
 ```
 
-### Mail Server with Spam/Antivirus Protection
-
-```bash
-# Install with full protection
-sudo webstack mail install mail.example.com --spam --av
-
-# Add users
-sudo webstack mail add user1@mail.example.com
-sudo webstack mail add user2@mail.example.com
-
-# Monitor spam scoring
-tail -f /var/log/exim4/mainlog | grep "X-Spam-Score"
-
-# Check antivirus activity
-tail -f /var/log/clamav/clamd.log
-
-# View Fail2Ban activity
-sudo fail2ban-client status exim4
-```
-
-## Troubleshooting
+### Troubleshooting
 
 ### Check Service Status
 ```bash
@@ -777,25 +720,7 @@ sudo webstack dns logs --lines 100
 sudo webstack dns restart
 ```
 
-### Mail Troubleshooting
-```bash
-# Check if mail services are running
-sudo systemctl status exim4
-sudo systemctl status dovecot
-sudo systemctl status spamassassin
-
-# Verify DKIM key exists
-ls -la /etc/exim4/domains/example.com/dkim.pem
-
-# Test spam scoring
-echo "VIAGRA BUY NOW" | spamc -U /run/spamd.sock -c
-
-# View mail queue
-sudo exim4 -bp
-
-# Restart mail services
-sudo systemctl restart exim4 dovecot
-```
+### DNS Troubleshooting
 
 ### Backup Troubleshooting
 ```bash
