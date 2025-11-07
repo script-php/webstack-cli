@@ -490,8 +490,6 @@ sudo cat /etc/iptables/rules.v4
 
 # Check Fail2Ban status
 sudo fail2ban-client status
-sudo fail2ban-client status exim4
-sudo fail2ban-client status dovecot
 
 # View banned IPs
 sudo ipset list banned_ips

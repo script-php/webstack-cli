@@ -2,11 +2,13 @@ package installer
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"text/template"
 	"time"
@@ -94,12 +96,18 @@ func checkComponentStatus(component Component) ComponentStatus {
 // checkPHPVersion checks if a specific PHP version is installed
 func checkPHPVersion(version string) ComponentStatus {
 	packageName := fmt.Sprintf("php%s-fpm", version)
-	cmd := exec.Command("dpkg", "-l", packageName)
-	err := cmd.Run()
+	// Use dpkg-query to check for "ii" (installed) status specifically
+	// ii = installed and configured, rc = removed but config remains
+	cmd := exec.Command("dpkg-query", "-W", "-f=${Status}", packageName)
+	output, err := cmd.Output()
 	if err != nil {
 		return NotInstalled
 	}
-	return Installed
+	// Check if package is installed and configured (first two chars should be "ii")
+	if len(output) >= 2 && output[0] == 'i' && output[1] == 'i' {
+		return Installed
+	}
+	return NotInstalled
 }
 
 // promptForAction asks user what to do when component is already installed
@@ -275,20 +283,11 @@ func uninstallPHP(version string) error {
 	runCommand("systemctl", "stop", serviceName)
 	runCommand("systemctl", "disable", serviceName)
 
-	phpPackage := fmt.Sprintf("php%s-fpm", version)
-	commonPackages := []string{
-		phpPackage,
-		fmt.Sprintf("php%s-mysql", version),
-		fmt.Sprintf("php%s-pgsql", version),
-		fmt.Sprintf("php%s-curl", version),
-		fmt.Sprintf("php%s-gd", version),
-		fmt.Sprintf("php%s-zip", version),
-		fmt.Sprintf("php%s-xml", version),
-		fmt.Sprintf("php%s-mbstring", version),
-	}
+	// Use purge with wildcard to remove all PHP packages including extensions
+	phpPattern := fmt.Sprintf("php%s*", version)
 
-	args := append([]string{"remove", "-y"}, commonPackages...)
-	return runCommand("apt", args...)
+	fmt.Println("🧹 Removing PHP packages and extensions...")
+	return runCommand("apt", "purge", "-y", phpPattern)
 }
 
 // InstallAll runs interactive installation of the complete web stack
@@ -1072,6 +1071,16 @@ func InstallPHP(version string) {
 		switch action {
 		case "keep":
 			fmt.Printf("✅ Keeping existing PHP %s installation\n", version)
+			// Even when keeping an existing PHP install, ensure the WebStack FPM pool
+			// is present and the service is restarted so new pool configs take effect.
+			configurePHP(version)
+			serviceName := fmt.Sprintf("php%s-fpm", version)
+			if err := runCommand("systemctl", "enable", serviceName); err != nil {
+				fmt.Printf("Error enabling PHP %s FPM: %v\n", version, err)
+			}
+			if err := runCommand("systemctl", "restart", serviceName); err != nil {
+				fmt.Printf("Error restarting PHP %s FPM: %v\n", version, err)
+			}
 			return
 		case "skip":
 			fmt.Printf("⏭️  Skipping PHP %s installation\n", version)
@@ -1110,34 +1119,71 @@ func InstallPHP(version string) {
 	phpPackage := fmt.Sprintf("php%s-fpm", version)
 	commonPackages := []string{
 		phpPackage,
+		// Core & CLI
+		fmt.Sprintf("php%s-cli", version),
+		fmt.Sprintf("php%s-common", version),
+		// Database extensions
 		fmt.Sprintf("php%s-mysql", version),
 		fmt.Sprintf("php%s-pgsql", version),
+		// Web & content management
 		fmt.Sprintf("php%s-curl", version),
 		fmt.Sprintf("php%s-gd", version),
-		fmt.Sprintf("php%s-zip", version),
 		fmt.Sprintf("php%s-xml", version),
+		// Compression & archives
+		fmt.Sprintf("php%s-zip", version),
+		fmt.Sprintf("php%s-bz2", version),
+		// String & encoding
 		fmt.Sprintf("php%s-mbstring", version),
+		// Security & hashing
+		fmt.Sprintf("php%s-bcmath", version),
+		// Mail (Roundcube, WordPress, etc.)
+		fmt.Sprintf("php%s-imap", version),
+		fmt.Sprintf("php%s-intl", version),
+		// Image processing
+		fmt.Sprintf("php%s-imagick", version),
+		// Caching
+		fmt.Sprintf("php%s-memcached", version),
+		fmt.Sprintf("php%s-redis", version),
+		// LDAP
+		fmt.Sprintf("php%s-ldap", version),
+		// SOAP
+		fmt.Sprintf("php%s-soap", version),
 	}
 
-	args := append([]string{"install", "-y"}, commonPackages...)
+	args := append([]string{"install", "-y", "--no-install-recommends"}, commonPackages...)
 	if err := runCommand("apt", args...); err != nil {
-		fmt.Printf("Error installing PHP %s: %v\n", version, err)
+		fmt.Printf("⚠️  Warning: PHP installation had issues: %v\n", err)
+		fmt.Println("   Attempting to configure and recover...")
+	}
+
+	// Stop the service to prevent conflicts during configuration
+	runCommandQuiet("systemctl", "stop", fmt.Sprintf("php%s-fpm", version))
+	time.Sleep(1 * time.Second)
+
+	// Configure PHP-FPM (this removes default www.conf and creates webstack pool)
+	configurePHP(version)
+
+	// Fix dpkg database in case of issues
+	fmt.Println("🔧 Repairing package configuration...")
+	runCommandQuiet("dpkg", "--configure", "-a")
+
+	// Now try to enable and start the service
+	serviceName := fmt.Sprintf("php%s-fpm", version)
+	if err := runCommand("systemctl", "enable", serviceName); err != nil {
+		fmt.Printf("⚠️  Warning: Could not enable PHP %s FPM: %v\n", version, err)
+	}
+
+	fmt.Printf("🚀 Starting PHP %s FPM service...\n", version)
+	if err := runCommand("systemctl", "restart", serviceName); err != nil {
+		fmt.Printf("❌ Error starting PHP %s FPM: %v\n", version, err)
+		fmt.Println("   Troubleshooting steps:")
+		fmt.Printf("   1. Check status: sudo systemctl status php%s-fpm\n", version)
+		fmt.Printf("   2. View logs: sudo journalctl -xeu php%s-fpm.service\n", version)
+		fmt.Printf("   3. Check config: php-fpm%s -t\n", version)
 		return
 	}
 
-	// Configure PHP-FPM
-	configurePHP(version)
-
-	serviceName := fmt.Sprintf("php%s-fpm", version)
-	if err := runCommand("systemctl", "enable", serviceName); err != nil {
-		fmt.Printf("Error enabling PHP %s FPM: %v\n", version, err)
-	}
-
-	if err := runCommand("systemctl", "start", serviceName); err != nil {
-		fmt.Printf("Error starting PHP %s FPM: %v\n", version, err)
-	}
-
-	fmt.Printf("✅ PHP %s installed successfully\n", version)
+	fmt.Printf("✅ PHP %s installed and started successfully\n", version)
 }
 
 // InstallMySQLVersion installs a specific version of MySQL or latest if version is empty
@@ -1576,9 +1622,13 @@ func UninstallPostgreSQL() {
 
 // UninstallPHP removes a specific PHP version
 func UninstallPHP(version string) {
-	status := checkPHPVersion(version)
+	// For uninstall, check if package exists in ANY state (ii, rc, etc.)
+	packageName := fmt.Sprintf("php%s-fpm", version)
+	cmd := exec.Command("dpkg-query", "-W", "-f=${Status}", packageName)
+	output, err := cmd.Output()
+	packageExists := err == nil && len(output) >= 1
 
-	if status != Installed {
+	if !packageExists {
 		fmt.Printf("ℹ️  PHP %s is not installed\n", version)
 		return
 	}
@@ -2015,8 +2065,58 @@ Security Notes:
 }
 
 func configurePHP(version string) {
-	// TODO: Apply PHP-FPM configuration from templates
-	fmt.Printf("⚙️  Configuring PHP %s...\n", version)
+	fmt.Printf("⚙️  Configuring PHP %s FPM pool...\n", version)
+
+	// Remove the default www.conf to avoid socket conflicts
+	defaultPoolPath := fmt.Sprintf("/etc/php/%s/fpm/pool.d/www.conf", version)
+	// Use rm command to ensure it works with proper privileges
+	runCommandQuiet("rm", "-f", defaultPoolPath)
+	fmt.Println("✓ Default www pool configuration removed")
+
+	// Read PHP-FPM pool template from embedded filesystem
+	poolData, err := templates.GetPHPTemplate("pool.conf")
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Could not read PHP-FPM pool template: %v\n", err)
+		fmt.Println("   Using system defaults")
+		return
+	}
+
+	// Process template with PHP version
+	tmpl, err := template.New("pool").Parse(string(poolData))
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Could not parse PHP-FPM pool template: %v\n", err)
+		return
+	}
+
+	type PoolData struct {
+		PHPVersion string
+		PoolName   string
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, PoolData{
+		PHPVersion: version,
+		PoolName:   "webstack",
+	}); err != nil {
+		fmt.Printf("⚠️  Warning: Could not render PHP-FPM pool template: %v\n", err)
+		return
+	}
+
+	// Write configuration to PHP-FPM pool directory
+	destDir := fmt.Sprintf("/etc/php/%s/fpm/pool.d", version)
+	destPath := filepath.Join(destDir, "webstack.conf")
+
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		fmt.Printf("⚠️  Warning: Could not create %s: %v\n", destDir, err)
+		return
+	}
+
+	if err := ioutil.WriteFile(destPath, buf.Bytes(), 0644); err != nil {
+		fmt.Printf("⚠️  Warning: Could not write PHP-FPM pool config: %v\n", err)
+		return
+	}
+
+	fmt.Printf("✓ PHP %s FPM pool configuration written to %s\n", version, destPath)
 }
 
 // isServiceActive checks if a systemd service is running

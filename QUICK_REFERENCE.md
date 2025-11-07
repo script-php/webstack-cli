@@ -79,16 +79,6 @@ sudo webstack cron status                         # Show cron system status
 sudo webstack cron logs                           # View cron execution logs
 ```
 
-### Mail Server (Enterprise)
-```bash
-sudo webstack mail install mail.example.com --spam --av    # Install with spam/antivirus
-sudo webstack mail install mail.example.com                # Install basic mail
-sudo webstack mail add user@example.com                    # Add mail user
-sudo webstack mail delete user@example.com                 # Delete mail user
-sudo webstack mail list example.com                        # List users
-sudo webstack mail status                                  # Check mail status
-```
-
 ### DNS Server (Bind9)
 ```bash
 sudo webstack dns install --mode master                    # Master DNS server
@@ -131,7 +121,7 @@ sudo webstack backup schedule status              # Check schedule status
 |---------|--------|-------|
 | Nginx Installation | ✅ Complete | Port 80, auto-configured |
 | Apache Installation | ✅ Complete | Port 8080, disabled by default |
-| MySQL/MariaDB Install | ✅ Complete | Configuration not applied |
+| MySQL/MariaDB Install | ✅ Complete | Configuration deployed to /etc/mysql/mariadb.conf.d/99-webstack.cnf |
 | PostgreSQL Install | ✅ Complete | Configuration not applied |
 | PHP 5.6-8.4 Install | ✅ Complete | Per-version tuning missing |
 | Domain Add/Edit/Delete | ✅ Complete | Full CRUD with config generation |
@@ -144,10 +134,9 @@ sudo webstack backup schedule status              # Check schedule status
 | Config Validation | ✅ Complete | Nginx/Apache with domain/SSL checks |
 | Service Status | ✅ Complete | Shows active services |
 | System Cleanup | ✅ Complete | Temp files, logs, caches |
+| Database Configuration | ✅ Complete | MySQL/MariaDB my.cnf deployed to /etc/mysql/mariadb.conf.d/ |
 | Firewall Management | ✅ Complete | Manual port control and IP blocking |
 | Firewall Auto-Management | ✅ Complete | Auto open/close ports on install/uninstall |
-| Mail Server Install | ✅ Complete | Exim4, Dovecot, SpamAssassin, ClamAV |
-| Mail User Management | ✅ Complete | Add/delete/list mail users |
 | DNS Master/Slave | ✅ Complete | Full master-slave replication |
 | DNS Clustering | ✅ Complete | Multi-server DNS clusters |
 | Database Remote Access | ✅ Complete | MySQL/PostgreSQL enable/disable |
@@ -216,8 +205,8 @@ internal/         - Implementation logic
 - [ ] ✅ Install all components via `install all`
 - [ ] ✅ Add production domains via `domain add`
 - [ ] ✅ Enable SSL for all domains via `ssl enable`
+- [ ] ✅ Database auto-configured (MySQL/MariaDB my.cnf deployed)
 - [ ] ✅ Set up monitoring/alerts (manual for now)
-- [ ] ⚠️ Configure databases (manual until configureDB complete)
 - [ ] ⚠️ Tune PHP-FPM pools (manual until configurePHP complete)
 - [ ] ✅ Run `system cleanup` regularly via cron
 
@@ -225,20 +214,17 @@ internal/         - Implementation logic
 
 ## ⚠️ KNOWN LIMITATIONS
 
-1. **Database Auto-Configuration** - MySQL/MariaDB/PostgreSQL install but don't apply my.cnf templates
-   - Workaround: Manually edit config files or use provided templates
-   
-2. **PHP-FPM Tuning** - Per-version configuration not applied
+1. **PHP-FPM Tuning** - Per-version configuration not applied
    - Workaround: Manually create pool.conf in `/etc/php/X.Y/fpm/pool.d/`
    
-3. **SSL Renewal Automation** - Certbot is configured but renewal schedule not created
+2. **SSL Renewal Automation** - Certbot is configured but renewal schedule not created
    - Workaround: Manual renewal with `ssl renew` or add cron: `0 3 * * * sudo webstack ssl renew`
    
-4. **System Validation** - Only checks Nginx/Apache, not domain/SSL configs
+3. **System Validation** - Only checks Nginx/Apache, not domain/SSL configs
    - Workaround: Manually verify domain JSON and SSL certificate files
    
-5. **No Backup/Restore** - Configuration changes not tracked
-   - Workaround: Manual backups of `/etc/webstack/` directory
+4. **PostgreSQL Configuration** - PostgreSQL installs but config not auto-applied
+   - Workaround: Manually apply templates from `internal/templates/postgresql/`
 
 ---
 
@@ -357,7 +343,6 @@ sudo systemctl restart nginx apache2
 - ✅ Domain configuration with template-based setup
 - ✅ SSL certificate generation (self-signed and Let's Encrypt)
 - ✅ PHP-FPM multi-version support
-- ✅ Mail server (Exim4, Dovecot, SpamAssassin, ClamAV)
 - ✅ DNS server (Bind9 master/slave with clustering)
 - ✅ Firewall management (iptables, ipset, fail2ban)
 - ✅ Automatic firewall port management on install/uninstall
@@ -368,7 +353,6 @@ sudo systemctl restart nginx apache2
 - ✅ Enterprise-grade backup/restore system with scheduling
 
 ### Included but Not Configured
-- ⚠️ MySQL/MariaDB/PostgreSQL (installed but config templates not applied)
 - ⚠️ PHP-FPM (installed but pools not auto-configured)
 
 ### Not Included (Manual Setup Needed)
@@ -383,15 +367,14 @@ sudo systemctl restart nginx apache2
 ## 🎯 NEXT PRIORITIES FOR DEVELOPMENT
 
 ### High Priority (1-2 weeks)
-1. Database configuration automation (my.cnf templates)
-2. PHP-FPM per-version pool configuration
-3. Unit and integration tests
-4. Production deployment guide
+1. PHP-FPM per-version pool configuration
+2. Unit and integration tests
+3. Production deployment guide
 
 ### Medium Priority (2-4 weeks)
-5. Health check command
-6. Configuration monitoring/alerting integration
-7. Web control panel (optional)
+4. Health check command
+5. Configuration monitoring/alerting integration
+6. Web control panel (optional)
 
 ---
 
