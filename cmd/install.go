@@ -100,6 +100,15 @@ var installPhpCmd = &cobra.Command{
 	},
 }
 
+var installMailCmd = &cobra.Command{
+	Use:   "mail",
+	Short: "Install complete mail server stack",
+	Long:  `Install Postfix and Dovecot mail servers with optional ClamAV antivirus and SpamAssassin spam filter.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		installer.InstallMailStack()
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.AddCommand(installAllCmd)
@@ -109,4 +118,5 @@ func init() {
 	installCmd.AddCommand(installMariadbCmd)
 	installCmd.AddCommand(installPostgresqlCmd)
 	installCmd.AddCommand(installPhpCmd)
+	installCmd.AddCommand(installMailCmd)
 }

@@ -70,6 +70,15 @@ var uninstallPhpCmd = &cobra.Command{
 	},
 }
 
+var uninstallMailCmd = &cobra.Command{
+	Use:   "mail",
+	Short: "Uninstall complete mail server stack",
+	Long:  `Uninstall Postfix, Dovecot, and optional mail security features (ClamAV, SpamAssassin).`,
+	Run: func(cmd *cobra.Command, args []string) {
+		installer.UninstallMailStack()
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(uninstallCmd)
 	uninstallCmd.AddCommand(uninstallAllCmd)
@@ -79,4 +88,5 @@ func init() {
 	uninstallCmd.AddCommand(uninstallMariadbCmd)
 	uninstallCmd.AddCommand(uninstallPostgresqlCmd)
 	uninstallCmd.AddCommand(uninstallPhpCmd)
+	uninstallCmd.AddCommand(uninstallMailCmd)
 }
